@@ -1,0 +1,73 @@
+name: Release
+
+# Run manually from the Actions tab: bumps the version in
+# .claude-plugin/plugin.json, commits it to main, tags it, and creates a
+# GitHub Release. Installed plugins update when that version changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        default: minor
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency: ${{ github.workflow }}
+
+jobs:
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bump version in plugin.json
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          node --input-type=module <<'EOF'
+          import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
+
+          const path = ".claude-plugin/plugin.json";
+          const source = readFileSync(path, "utf8");
+          const current = JSON.parse(source).version;
+          const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(current ?? "");
+          if (!match) throw new Error(`plugin.json version "${current}" is not x.y.z`);
+
+          let [major, minor, patch] = match.slice(1).map(Number);
+          if (process.env.BUMP === "major") [major, minor, patch] = [major + 1, 0, 0];
+          else if (process.env.BUMP === "minor") [minor, patch] = [minor + 1, 0];
+          else patch += 1;
+          const next = `${major}.${minor}.${patch}`;
+
+          // Rewrite only the version line, to keep the key order and formatting.
+          writeFileSync(path, source.replace(/("version"\s*:\s*")[^"]*(")/, `$1${next}$2`));
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${next}\n`);
+          console.log(`plugin.json version ${current} -> ${next}`);
+          EOF
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release v$VERSION"
+          git tag "nash403-skills--v$VERSION"
+          git push --atomic origin HEAD:main "nash403-skills--v$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: gh release create "nash403-skills--v$VERSION" --title "v$VERSION" --generate-notes

@@ -1,0 +1,16 @@
+{
+  "name": "nash403",
+  "owner": {
+    "name": "Honoré Nintunze",
+    "url": "https://github.com/nash403"
+  },
+  "description": "nash403's skills, as an installable Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "nash403-skills",
+      "source": "./",
+      "description": "My personal skills that I use every day to do engineering on my personal and professional projects.",
+      "category": "engineering"
+    }
+  ]
+}

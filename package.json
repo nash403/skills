@@ -1,0 +1,14 @@
+{
+  "name": "nash403-skills",
+  "private": true,
+  "description": "Dev scripts for nash403's skills. The published version lives in .claude-plugin/plugin.json.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nash403/skills"
+  },
+  "license": "MIT",
+  "scripts": {
+    "validate": "claude plugin validate . --strict"
+  },
+  "packageManager": "pnpm@10.26.0"
+}

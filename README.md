@@ -14,16 +14,18 @@ Two ways in, two philosophies. **The [Claude Code plugin](https://code.claude.co
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude plugins install nash403-skills
+claude plugin marketplace add nash403/skills
+claude plugin install nash403-skills@nash403
 ```
 
 Or, from inside a session:
 
 ```
-/plugin install nash403-skills
+/plugin marketplace add nash403/skills
+/plugin install nash403-skills@nash403
 ```
 
-It's in Claude Code's official marketplace, so there's nothing to add first, and updates arrive automatically.
+To get new versions automatically, turn on auto-update for the `nash403` marketplace in `/plugin`. Otherwise, run `claude plugin update nash403-skills`.
 
 </details>
 
