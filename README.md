@@ -29,28 +29,4 @@ To get new versions automatically, turn on auto-update for the `nash403` marketp
 
 </details>
 
-<details>
-<summary><strong>Codex, and other agents</strong></summary>
-
-```bash
-npx skills@latest add nash403/skills
-```
-
-Pick the skills you want, and which coding agents to install them on. **The installer lets you choose which skills to take.**
-
-</details>
-
-<details>
-<summary><strong>For tinkerers</strong></summary>
-
-Use the same installer, on any agent, including Claude Code:
-
-```bash
-npx skills@latest add nash403/skills
-```
-
-It writes the skills into your repo as ordinary files you own and can edit. Nothing updates behind your back; pull my latest changes when you want them with `npx skills update`.
-
-</details>
-
 ### 2. Bam - you're ready to go.
