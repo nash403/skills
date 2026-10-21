@@ -1,14 +1,15 @@
 ---
 name: ticket-conventions
-description: Conventions for writing tickets in PM's voice. Ticket = any tracked work item (issue, story, bug, task, epic, spec). Use when I ask to draft, write, create, or convert a request into one, or to reword, reformat, or clean up an existing one.
+description: Conventions for writing single tickets in PM's voice. Ticket = any tracked work item (issue, story, bug, task). Use when I ask to draft, write, create, or convert a request into one, or to reword, reformat, or clean up an existing one.
 ---
 
 Write as the PM/PO who owns the need: decisive, plain, English, no hedging, lists over
 prose, zero filler ("it's worth noting", "going forward"). State the easy-to-miss obvious —
 default state of new UI, persistence, disabled/loading/empty states, what each button does.
 
-Destination given (a template in the prompt, a ticket-creation skill, or the existing
-ticket): read its sections, drop each dimension below into the matching one, change only
+Destination given (the existing ticket, a template in the prompt, the target platform's
+template for that kind of ticket, e.g. Linear's issue template, or a ticket-creation
+skill): read its sections, drop each dimension below into the matching one, change only
 section content — keep every block and heading — and let that skill own page creation,
 properties, and template application. Rewording is patching, never rewriting: retone the
 sections that miss my intent, leave the sound ones untouched. No destination: emit one
@@ -24,13 +25,18 @@ In order. Physically delete a section that adds nothing — no empty heading, no
 3. **What to build** — the flow from entry point to end state in user-visible language, plus
    the rules that govern it: first-render defaults, sync/persistence, locked states,
    validation thresholds, empty/loading states, warn-vs-hard-block. Decisions carry their
-   rationale ("non-blocking warning in v1, hard block deferred"). Reference mockups inline.
+   rationale ("non-blocking warning in v1, hard block deferred").
    Tag each rule `[BR1]`, `[BR2]`, …
 4. **Acceptance criteria** — checkboxes, one dense declarative sentence each, independently
    verifiable. Terse, no rationale, no paraphrase of 3. Tag
    `[AC1]`, `[AC2]`, … e.g. `- [ ] [AC1] Revoking access logs the actor and the timestamp.`
-5. **Blocked by & Related tickets / links** *(conditional)* — blockers first, then existing
-   parents, siblings, design files, specs. Never the ticket's own sub-tasks.
+5. **Mockups & copy** *(conditional)* — mockups inlined as images. Any user-facing copy in
+   the demand, translated into every language the product serves (detect the project's
+   language set; ask once if it isn't obvious), each phrasing judged in context — never a
+   blank locale.
+6. **Related links** *(conditional)* — one link per line, prefixed by its kind: `Blocked by`
+   first, then `Parent`, `Related`, `Design`, `Spec`, `Doc`… Mockup and design file links go
+   here. Never the ticket's own sub-tasks.
 
 No "Out of scope" section: it pollutes the read and hands the reader — human or agent —
 context it then has to ignore.
@@ -42,9 +48,7 @@ came from a prototype. Trim to the decision-rich parts — not a working demo, j
 important bits.
 
 Anything explicitly deferred becomes `Placeholder for <what's missing>` — one line, no
-owner, no timing. Any user-facing copy in the demand ships translated into every language
-the product serves (detect the project's language set; ask once if it isn't obvious), each
-phrasing judged in context — never a blank locale.
+owner, no timing.
 
 ## Before delivering
 
