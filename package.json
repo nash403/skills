@@ -10,5 +10,5 @@
   "scripts": {
     "validate": "claude plugin validate . --strict"
   },
-  "packageManager": "pnpm@10.26.0"
+  "packageManager": "pnpm@12.14.0"
 }
