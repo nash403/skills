@@ -38,7 +38,7 @@ In a UI, the default seam is the component: props in, rendered output and emitte
 
 Ask: "What's the public interface, and which seams should we test?"
 
-When the shape of that interface is itself in question (how deep the module is, where the seam belongs, what the interface should expose), call the Skill tool with "codebase-architect" for the vocabulary: module, interface, depth, seam, adapter, leverage, locality. It's a reference to consult, not a session to run.
+When the shape of that interface is itself in question (how deep the module is, where the seam belongs, what the interface should expose), call the Skill tool with "designing-deep-modules" for the vocabulary: module, interface, depth, seam, adapter, leverage, locality. It's a reference to consult, not a session to run.
 
 ## Anti-patterns
 
