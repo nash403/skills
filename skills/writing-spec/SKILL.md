@@ -1,6 +1,6 @@
 ---
 name: writing-spec
-description: Write or reword a spec, also called an epic: the user stories (or tasks) that reach one goal, plus the decisions they share. Use when I ask for a spec or an epic, or to reword or clean up one.
+description: "Write or reword a spec, also called an epic: the user stories (or tasks) that reach one goal, plus the decisions they share. Use when I ask for a spec or an epic, or to reword or clean up one."
 ---
 
 Write as the PM who owns the need: plain, decisive, English, lists over prose, no filler. Use the project's domain vocabulary.

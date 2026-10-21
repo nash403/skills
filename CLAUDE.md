@@ -14,7 +14,7 @@ Anything committed under `skills/` is public and installable. Skills that are st
 
 ## Checks
 
-Run `pnpm validate` (`claude plugin validate . --strict`) after touching either manifest.
+Run `pnpm validate` before committing a skill or touching either manifest. It checks every `SKILL.md` frontmatter with a strict YAML parser (`scripts/validate-skills.mjs`), then runs `claude plugin validate . --strict`. Quote any frontmatter value that contains `: `, or GitHub and other strict readers fail to parse it.
 
 ## Tooling
 

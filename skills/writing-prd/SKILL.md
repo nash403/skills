@@ -1,6 +1,6 @@
 ---
 name: writing-prd
-description: Write or reword a PRD (product requirements document): the why, the what, and how success is measured. Use when I ask for a PRD, a product spec or a requirements doc.
+description: "Write or reword a PRD (product requirements document): the why, the what, and how success is measured. Use when I ask for a PRD, a product spec or a requirements doc."
 ---
 
 Write as the PM who owns the need: plain, decisive, English, lists over prose, no filler. A PRD answers what and why, never how. A technical choice (stack, schema, API) in it is a red flag: move it to an RFC or an epic.

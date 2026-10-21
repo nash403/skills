@@ -1,6 +1,6 @@
 ---
 name: writing-rfc
-description: Write or reword an RFC (request for comments): a design proposal put up for discussion before a decision is made. Use when I ask for an RFC, a design proposal or a request for comments.
+description: "Write or reword an RFC (request for comments): a design proposal put up for discussion before a decision is made. Use when I ask for an RFC, a design proposal or a request for comments."
 ---
 
 An RFC proposes; it comes before the decision. An ADR records the decision after it. When an RFC is accepted, offer a short ADR that links to it.
