@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wizard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
+<!-- ============================ CONFIG ============================
+  The only part to edit. Everything below the LIBRARY marker is identical
+  in every wizard: never hand-edit it.
+
+  id          Unique, kebab-case. Keys the saved answers in localStorage.
+  title       Shown in the header and the prompt.
+  intro       One or two sentences for the person filling it in.
+  publicKey   Required when any field is `secret`: the output of
+              `node secrets.mjs keygen <path>`.
+  keyPath     Where the private key lives, quoted in the generated prompt.
+  decrypt     The command the prompt gives to decrypt a value.
+  envFile     The .env file `env` targets write to (default ".env").
+  prompt      Optional { intro, outro } lines around the generated prompt.
+  sections    One page each, 3–6 questions per section.
+    id, title, description
+    steps     Ordered instructions shown above the fields (the journey).
+    links     [{ label, url }] buttons that open in a new tab.
+    fields    id, label, type, hint, description, placeholder, required,
+              options, default, showIf, target, and validation rules
+      type         text | textarea | email | url | number | select |
+                   radio | checkbox | boolean | secret
+      hint         Under the label: what to enter.
+      description  Under the field: format, example, where it's found.
+      options      For select, radio, checkbox: ["a", "b"] or
+                   [{ value, label }]. Radio with 4 options or fewer
+                   renders as a segmented control.
+      showIf       { field, equals } or { field, in: [...] }
+      target       Where the value goes, any of
+                   { env: "NAME", secret: "NAME", var: "NAME" }
+      Validation   email and url types check their format. Also:
+                   minLength, maxLength (text, textarea, secret),
+                   min, max, step (number),
+                   pattern + patternMessage (text, secret).
+================================================================== -->
+<script>
+window.WIZARD = {
+  id: "example-setup",
+  title: "Example service setup",
+  intro: "A few details to connect the project to its payment and email providers. Your answers are saved in this browser as you go.",
+  publicKey: "",
+  keyPath: "/tmp/example-setup.key",
+  decrypt: "node skills/wizard/secrets.mjs decrypt",
+  envFile: ".env",
+  prompt: {
+    intro: "Here are the answers to the setup wizard.",
+    outro: "Confirm each value once it's written.",
+  },
+  sections: [
+    {
+      id: "project",
+      title: "About the project",
+      description: "So the values land in the right environment.",
+      fields: [
+        { id: "projectName", label: "Project name", type: "text", required: true, placeholder: "acme-store", pattern: "^[a-z0-9-]+$", patternMessage: "Lowercase letters, digits and dashes only.", description: "The repository name, in kebab-case." },
+        { id: "environment", label: "Environment", type: "radio", required: true, options: ["development", "staging", "production"], default: "development" },
+        { id: "monthlyOrders", label: "Expected orders per month", type: "number", min: 0, step: 100, default: 500, hint: "A rough guess is fine." },
+        { id: "webhooks", label: "Will the project receive webhooks?", type: "boolean", default: false },
+      ],
+    },
+    {
+      id: "stripe",
+      title: "Stripe",
+      description: "Two API keys from the Stripe dashboard.",
+      steps: [
+        "Open the Stripe dashboard and sign in.",
+        "Go to Developers → API keys.",
+        "Copy the publishable key, then reveal and copy the secret key.",
+      ],
+      links: [{ label: "Stripe API keys", url: "https://dashboard.stripe.com/apikeys" }],
+      fields: [
+        { id: "stripePublishable", label: "Publishable key", type: "text", required: true, placeholder: "pk_test_…", pattern: "^pk_(test|live)_", patternMessage: "Starts with pk_test_ or pk_live_.", target: { env: "STRIPE_PUBLISHABLE_KEY" } },
+        { id: "stripeSecret", label: "Secret key", type: "secret", required: true, placeholder: "sk_test_…", pattern: "^sk_(test|live)_", patternMessage: "Starts with sk_test_ or sk_live_.", hint: "Encrypted as soon as you leave the field.", target: { env: "STRIPE_SECRET_KEY", secret: "STRIPE_SECRET_KEY" } },
+        { id: "webhookUrl", label: "Webhook endpoint", type: "url", placeholder: "https://acme.com/api/stripe", showIf: { field: "webhooks", equals: true }, target: { env: "STRIPE_WEBHOOK_URL" } },
+        { id: "stripeWebhookSecret", label: "Webhook signing secret", type: "secret", description: "Developers → Webhooks → your endpoint → Signing secret.", showIf: { field: "webhooks", equals: true }, target: { env: "STRIPE_WEBHOOK_SECRET" } },
+      ],
+    },
+    {
+      id: "email",
+      title: "Email",
+      fields: [
+        { id: "emailProvider", label: "Provider", type: "select", required: true, options: ["Resend", "Postmark", "None yet"] },
+        { id: "emailFrom", label: "Sender address", type: "email", required: true, placeholder: "hello@acme.com", showIf: { field: "emailProvider", in: ["Resend", "Postmark"] }, target: { env: "EMAIL_FROM", var: "EMAIL_FROM" } },
+        { id: "emailTypes", label: "Emails to send", type: "checkbox", options: ["Receipts", "Password resets", "Newsletters", "Shipping updates"] },
+        { id: "emailNotes", label: "Anything we should know?", type: "textarea", maxLength: 500 },
+      ],
+    },
+  ],
+};
+</script>
+<!-- ============================ LIBRARY ============================ -->
+
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.43/dist/vue.global.prod.js"></script>
+<style type="text/tailwindcss">
+  :root {
+    --wz-bg: #f5f1e8;
+    --wz-surface: #fffdf8;
+    --wz-ink: #1b2230;
+    --wz-muted: #5f6878;
+    --wz-line: #e4ddcf;
+    --wz-lagoon: #0f5f6b;
+    --wz-lagoon-soft: #dcecea;
+    --wz-apricot: #e2722f;
+    --wz-apricot-soft: #fce8da;
+    --wz-danger: #c2412d;
+    --wz-success: #2f7d55;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --wz-bg: #0e1317;
+      --wz-surface: #151c22;
+      --wz-ink: #ece7de;
+      --wz-muted: #97a1ab;
+      --wz-line: #263039;
+      --wz-lagoon: #5fbcc0;
+      --wz-lagoon-soft: #163238;
+      --wz-apricot: #f4a26b;
+      --wz-apricot-soft: #3a2619;
+      --wz-danger: #f0806d;
+      --wz-success: #6cc49a;
+      color-scheme: dark;
+    }
+  }
+  @theme inline {
+    --color-bg: var(--wz-bg);
+    --color-surface: var(--wz-surface);
+    --color-ink: var(--wz-ink);
+    --color-muted: var(--wz-muted);
+    --color-line: var(--wz-line);
+    --color-lagoon: var(--wz-lagoon);
+    --color-lagoon-soft: var(--wz-lagoon-soft);
+    --color-apricot: var(--wz-apricot);
+    --color-apricot-soft: var(--wz-apricot-soft);
+    --color-danger: var(--wz-danger);
+    --color-success: var(--wz-success);
+    --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  [v-cloak] { display: none; }
+  body { background: var(--wz-bg); }
+
+  /* Signature backdrop: graph paper fading out from the top, with a lagoon
+     glow top right and an apricot glow bottom left. */
+  .wz-backdrop {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(42rem 26rem at 92% -8%, color-mix(in srgb, var(--wz-lagoon) 16%, transparent), transparent 70%),
+      radial-gradient(36rem 26rem at -6% 108%, color-mix(in srgb, var(--wz-apricot) 14%, transparent), transparent 70%),
+      var(--wz-bg);
+  }
+  .wz-backdrop::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--wz-ink) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--wz-ink) 7%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, black 30%, transparent 80%);
+  }
+  .wz-backdrop::after {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(color-mix(in srgb, var(--wz-apricot) 45%, transparent) 1.2px, transparent 1.2px);
+    background-size: 96px 96px;
+    background-position: 12px 12px;
+    mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, black 20%, transparent 75%);
+  }
+  .wz-grain {
+    background-image: radial-gradient(color-mix(in srgb, var(--wz-apricot) 40%, transparent) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+
+  .wz-control {
+    @apply w-full rounded-md border border-line bg-surface px-3 py-2 text-[15px] text-ink placeholder:text-muted/60 outline-none transition;
+    @apply hover:border-muted/50 focus:border-lagoon focus:ring-3 focus:ring-lagoon/15;
+  }
+  .wz-control[aria-invalid="true"] { @apply border-danger/70 focus:ring-danger/15; }
+  select.wz-control {
+    appearance: none; padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath d='M5.2 7.7a.75.75 0 0 1 1.06.04L10 11.6l3.74-3.86a.75.75 0 1 1 1.08 1.04l-4.28 4.42a.75.75 0 0 1-1.08 0L5.18 8.78a.75.75 0 0 1 .02-1.08Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.6rem center; background-size: 1.1rem;
+  }
+  input[type="number"].wz-control { -moz-appearance: textfield; }
+  input[type="number"].wz-control::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  /* Micro-interactions */
+  .wz-forward-enter-active, .wz-forward-leave-active,
+  .wz-back-enter-active, .wz-back-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
+  .wz-forward-enter-from, .wz-back-leave-to { opacity: 0; transform: translateX(24px); }
+  .wz-forward-leave-to, .wz-back-enter-from { opacity: 0; transform: translateX(-24px); }
+  .wz-fade-enter-active, .wz-fade-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+  .wz-fade-enter-from, .wz-fade-leave-to { opacity: 0; transform: translateY(6px); }
+  .wz-pop { animation: wz-pop 0.28s ease; }
+  @keyframes wz-pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+  .wz-shake { animation: wz-shake 0.36s ease; }
+  @keyframes wz-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body class="min-h-screen font-sans text-ink antialiased">
+<div class="wz-backdrop" aria-hidden="true"></div>
+<div id="app" v-cloak>
+
+  <!-- Sticky bar: progress and section navigation -->
+  <nav class="sticky top-0 z-20 bg-bg/80 backdrop-blur-md">
+    <div class="mx-auto max-w-2xl px-4">
+      <div class="flex items-center gap-2.5 pt-3">
+        <span class="h-2 w-2 rotate-45 rounded-[2px] bg-apricot"></span>
+        <span class="truncate font-display text-sm font-bold">{{ config.title }}</span>
+        <span class="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted">{{ progress.done }}/{{ progress.total }} required</span>
+      </div>
+      <div class="-mx-1 flex gap-0.5 overflow-x-auto py-2">
+        <button v-for="(section, i) in sections" :key="section.id" type="button" @click="go(i)" :data-page="i"
+          class="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] transition"
+          :class="page === i ? 'bg-lagoon text-surface' : 'text-muted hover:bg-surface hover:text-ink'">
+          <span class="font-mono text-[11px]" :class="page === i ? 'text-surface/70' : 'text-apricot'">{{ pad(i + 1) }}</span>
+          {{ section.title }}
+          <svg v-if="sectionComplete(section)" class="wz-pop h-3 w-3" :class="page === i ? 'text-surface' : 'text-success'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+        </button>
+        <button type="button" @click="go(sections.length)" :data-page="sections.length"
+          class="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] transition"
+          :class="page === sections.length ? 'bg-apricot text-surface' : 'text-muted hover:bg-surface hover:text-ink'">
+          <span class="font-mono text-[11px]">✦</span> Recap
+        </button>
+      </div>
+    </div>
+    <div class="h-[3px] bg-line/70">
+      <div class="h-full bg-gradient-to-r from-lagoon to-apricot transition-all duration-500" :style="{ width: progress.percent + '%' }"></div>
+    </div>
+  </nav>
+
+  <main class="mx-auto max-w-2xl px-4 pb-28">
+
+    <!-- Header -->
+    <header v-if="page === 0" class="relative mt-6 overflow-hidden rounded-xl bg-lagoon px-6 py-7 text-surface sm:px-8">
+      <div class="wz-grain absolute inset-y-0 right-0 w-1/2 opacity-50"></div>
+      <div class="absolute -bottom-12 -right-12 h-32 w-32 rounded-full bg-apricot/90 sm:h-40 sm:w-40"></div>
+      <div class="relative max-w-md pr-8 sm:pr-0">
+        <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-surface/70">Wizard · {{ sections.length }} sections</p>
+        <h1 class="mt-1.5 font-display text-3xl font-bold leading-tight">{{ config.title }}</h1>
+        <p v-if="config.intro" class="mt-2.5 text-[15px] text-surface/85">{{ config.intro }}</p>
+      </div>
+    </header>
+
+    <div v-if="authorWarning" class="mt-6 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">{{ authorWarning }}</div>
+
+    <Transition :name="direction" mode="out-in">
+    <!-- Section page -->
+    <section v-if="current" :key="current.id" class="mt-8">
+      <p class="font-mono text-xs text-apricot">{{ pad(page + 1) }} / {{ pad(sections.length) }}</p>
+      <h2 class="mt-1 font-display text-2xl font-bold">{{ current.title }}</h2>
+      <p v-if="current.description" class="mt-1 text-[15px] text-muted">{{ current.description }}</p>
+
+      <div v-if="current.steps?.length || current.links?.length" class="mt-5 rounded-lg bg-apricot-soft/60 px-4 py-3.5">
+        <ol v-if="current.steps?.length" class="space-y-1.5 text-[15px]">
+          <li v-for="(step, i) in current.steps" :key="i" class="flex gap-2.5">
+            <span class="mt-[3px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-apricot font-mono text-[10px] text-surface">{{ i + 1 }}</span>
+            <span>{{ step }}</span>
+          </li>
+        </ol>
+        <div v-if="current.links?.length" class="flex flex-wrap gap-2" :class="{ 'mt-3': current.steps?.length }">
+          <a v-for="link in current.links" :key="link.url" :href="link.url" target="_blank" rel="noopener"
+            class="group inline-flex items-center gap-1 rounded-md bg-surface px-2.5 py-1 text-sm font-medium text-lagoon shadow-sm transition hover:shadow">
+            {{ link.label }} <span class="transition group-hover:-translate-y-px group-hover:translate-x-px" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-5 space-y-6 rounded-xl border border-line/80 bg-surface/90 p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] sm:p-6">
+        <div v-for="field in visibleFields(current)" :key="field.id" :id="'field-' + field.id"
+          :class="{ 'wz-shake': shaking === field.id }">
+
+          <!-- Field: label, hint, control, description, error -->
+          <div class="flex items-baseline gap-2">
+            <label :for="'input-' + field.id" :id="'label-' + field.id" class="text-[15px] font-medium">
+              {{ field.label }}<span v-if="field.required" class="ml-0.5 text-apricot" aria-hidden="true">*</span>
+            </label>
+            <span v-if="field.type === 'secret'" class="ml-auto inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-lagoon">
+              <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a4 4 0 0 0-4 4v2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1V6a4 4 0 0 0-4-4Zm2 6V6a2 2 0 1 0-4 0v2h4Z" clip-rule="evenodd"/></svg>
+              encrypted
+            </span>
+            <span v-else-if="field.maxLength && typeof answers[field.id] === 'string'" class="ml-auto font-mono text-[11px]"
+              :class="answers[field.id].length > field.maxLength ? 'text-danger' : 'text-muted'">{{ answers[field.id].length }}/{{ field.maxLength }}</span>
+          </div>
+          <p v-if="field.hint" :id="'hint-' + field.id" class="mt-0.5 text-sm text-muted">{{ field.hint }}</p>
+
+          <div class="mt-2">
+            <textarea v-if="field.type === 'textarea'" :id="'input-' + field.id" v-model="answers[field.id]" rows="4"
+              :placeholder="field.placeholder" class="wz-control resize-y" v-bind="aria(field)" @blur="touch(field)"></textarea>
+
+            <select v-else-if="field.type === 'select'" :id="'input-' + field.id" v-model="answers[field.id]"
+              class="wz-control" v-bind="aria(field)" @change="touch(field)">
+              <option value="" disabled>Choose…</option>
+              <option v-for="option in options(field)" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+
+            <!-- Segmented control: radio with few options -->
+            <div v-else-if="field.type === 'radio' && options(field).length <= 4" role="radiogroup" :aria-labelledby="'label-' + field.id"
+              class="relative inline-flex max-w-full rounded-lg bg-bg p-1">
+              <button v-for="option in options(field)" :key="option.value" type="button" role="radio"
+                :aria-checked="answers[field.id] === option.value" @click="answers[field.id] = option.value; touch(field)"
+                class="relative rounded-md px-3.5 py-1.5 text-sm transition"
+                :class="answers[field.id] === option.value ? 'bg-surface font-medium text-lagoon shadow-sm' : 'text-muted hover:text-ink'">
+                {{ option.label }}
+              </button>
+            </div>
+
+            <!-- Option list: radio with many options, checkbox -->
+            <div v-else-if="field.type === 'radio' || field.type === 'checkbox'" :role="field.type === 'radio' ? 'radiogroup' : 'group'"
+              :aria-labelledby="'label-' + field.id" class="flex flex-wrap gap-2">
+              <button v-for="option in options(field)" :key="option.value" type="button"
+                :role="field.type" :aria-checked="isChecked(field, option.value)" @click="toggleOption(field, option.value)"
+                class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition"
+                :class="isChecked(field, option.value) ? 'border-lagoon bg-lagoon-soft text-lagoon' : 'border-line hover:border-muted/60'">
+                <span class="flex h-4 w-4 shrink-0 items-center justify-center border transition"
+                  :class="[field.type === 'radio' ? 'rounded-full' : 'rounded-[4px]', isChecked(field, option.value) ? 'border-lagoon bg-lagoon text-surface' : 'border-muted/50']">
+                  <svg v-if="isChecked(field, option.value)" class="wz-pop h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+                </span>
+                {{ option.label }}
+              </button>
+            </div>
+
+            <!-- Switch -->
+            <button v-else-if="field.type === 'boolean'" type="button" role="switch" :aria-checked="answers[field.id] === true"
+              :aria-labelledby="'label-' + field.id" @click="answers[field.id] = !answers[field.id]" class="group inline-flex items-center gap-3">
+              <span class="relative h-6 w-11 rounded-full transition" :class="answers[field.id] ? 'bg-lagoon' : 'bg-line'">
+                <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-surface shadow transition-transform duration-200"
+                  :class="answers[field.id] ? 'translate-x-5' : ''"></span>
+              </span>
+              <span class="text-sm" :class="answers[field.id] ? 'text-ink' : 'text-muted'">{{ answers[field.id] ? 'Yes' : 'No' }}</span>
+            </button>
+
+            <!-- Number stepper -->
+            <div v-else-if="field.type === 'number'" class="inline-flex items-stretch">
+              <button type="button" class="rounded-l-md border border-r-0 border-line bg-surface px-3 text-muted transition hover:text-ink" aria-label="Decrease" @click="step(field, -1)">−</button>
+              <input :id="'input-' + field.id" v-model="answers[field.id]" type="number" inputmode="decimal" :min="field.min" :max="field.max" :step="field.step"
+                :placeholder="field.placeholder" class="wz-control w-32 rounded-none text-center font-mono" v-bind="aria(field)" @blur="touch(field)">
+              <button type="button" class="rounded-r-md border border-l-0 border-line bg-surface px-3 text-muted transition hover:text-ink" aria-label="Increase" @click="step(field, 1)">+</button>
+            </div>
+
+            <!-- Secret -->
+            <div v-else-if="field.type === 'secret'">
+              <div v-if="sealed[field.id] && !editing[field.id]" class="flex items-center gap-3 rounded-md bg-lagoon-soft/60 px-3 py-2 text-sm text-lagoon">
+                <span>Saved and encrypted</span>
+                <button type="button" class="ml-auto shrink-0 font-medium underline-offset-4 hover:underline" @click="editing[field.id] = true">Replace</button>
+              </div>
+              <div v-else class="relative">
+                <input :id="'input-' + field.id" :type="revealed[field.id] ? 'text' : 'password'" autocomplete="off" spellcheck="false"
+                  :placeholder="field.placeholder" class="wz-control pr-16 font-mono text-sm" v-bind="aria(field)" @change="sealSecret(field, $event.target)">
+                <button type="button" class="absolute inset-y-0 right-0 px-3 text-xs font-medium text-muted hover:text-ink" @click="revealed[field.id] = !revealed[field.id]">
+                  {{ revealed[field.id] ? 'Hide' : 'Show' }}
+                </button>
+              </div>
+            </div>
+
+            <input v-else :id="'input-' + field.id" v-model.trim="answers[field.id]" :placeholder="field.placeholder"
+              :type="field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : 'text'"
+              :inputmode="field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : undefined"
+              class="wz-control" v-bind="aria(field)" @blur="touch(field)">
+          </div>
+
+          <p v-if="field.description" :id="'desc-' + field.id" class="mt-1.5 text-[13px] text-muted">{{ field.description }}</p>
+          <Transition name="wz-fade">
+            <p v-if="errorFor(field)" :id="'error-' + field.id" class="mt-1.5 flex items-center gap-1.5 text-[13px] font-medium text-danger" role="alert">
+              <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.9.9 0 0 0-.9.9v4.2a.9.9 0 1 0 1.8 0V5.9A.9.9 0 0 0 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+              {{ errorFor(field) }}
+            </p>
+          </Transition>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Recap page -->
+    <section v-else key="recap" class="mt-8">
+      <p class="font-mono text-xs text-apricot">✦ Recap</p>
+      <h2 class="mt-1 font-display text-2xl font-bold">Check your answers</h2>
+      <p class="mt-1 text-[15px] text-muted">Then copy them and send them back.</p>
+
+      <div v-if="issues.length" class="mt-5 rounded-lg bg-apricot-soft/70 px-4 py-3">
+        <p class="text-sm font-medium">{{ issues.length }} {{ issues.length === 1 ? 'answer needs' : 'answers need' }} attention</p>
+        <ul class="mt-1.5 space-y-0.5 text-sm">
+          <li v-for="item in issues" :key="item.field.id">
+            <button type="button" class="text-lagoon underline-offset-4 hover:underline" @click="focusField(item.index, item.field.id)">{{ item.section.title }} · {{ item.field.label }}</button>
+            <span class="text-muted"> — {{ item.message }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="mt-5 space-y-7 rounded-xl border border-line/80 bg-surface/90 p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] sm:p-6">
+        <div v-for="(section, i) in sections" :key="section.id">
+          <div class="flex items-baseline gap-2">
+            <span class="font-mono text-[11px] text-apricot">{{ pad(i + 1) }}</span>
+            <h3 class="font-display font-bold">{{ section.title }}</h3>
+            <button type="button" class="ml-auto text-sm text-lagoon underline-offset-4 hover:underline" @click="go(i)">Edit</button>
+          </div>
+          <dl class="mt-2.5 grid gap-x-6 gap-y-2.5 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <template v-for="field in visibleFields(section)" :key="field.id">
+              <dt class="text-sm text-muted">{{ field.label }}</dt>
+              <dd class="-mt-2 break-words text-sm sm:mt-0" :class="{ 'text-muted/70 italic': display(field) === '—' }">{{ display(field) }}</dd>
+            </template>
+          </dl>
+        </div>
+      </div>
+
+      <p class="mt-3 text-[13px] text-muted">The prompt tells an AI agent where each value goes. Secrets stay encrypted in every format.</p>
+      <textarea v-if="fallback" readonly rows="8" class="wz-control mt-3 font-mono text-xs" :value="fallback" @focus="$event.target.select()"></textarea>
+    </section>
+    </Transition>
+  </main>
+
+  <!-- Fixed footer: navigation stays put whatever the section's length -->
+  <footer class="fixed inset-x-0 bottom-0 z-20 bg-bg/80 backdrop-blur-md">
+    <div class="h-px bg-gradient-to-r from-transparent via-line to-transparent"></div>
+    <div class="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
+      <button v-if="page > 0" type="button" @click="go(page - 1)" class="rounded-md px-3 py-2 text-sm font-medium text-muted transition hover:bg-surface hover:text-ink">← Back</button>
+      <Transition name="wz-fade">
+        <button v-if="hasAnswers" type="button" @click="clearAll" class="rounded-md px-3 py-2 text-sm font-medium text-muted transition hover:bg-danger/10 hover:text-danger">Clear answers</button>
+      </Transition>
+
+      <button v-if="current" type="button" @click="next" class="group ml-auto inline-flex items-center gap-1.5 rounded-md bg-lagoon px-4 py-2 text-sm font-medium text-surface shadow-sm transition hover:brightness-110 active:scale-[0.98]">
+        {{ page === sections.length - 1 ? 'Review answers' : 'Next' }}
+        <span class="transition group-hover:translate-x-0.5">→</span>
+      </button>
+
+        <!-- Split button: main action, other formats in the menu -->
+        <div v-else class="relative ml-auto inline-flex rounded-md shadow-sm" data-menu>
+          <button type="button" @click="copy('prompt')" class="rounded-l-md bg-apricot px-4 py-2 text-sm font-medium text-surface transition hover:brightness-105 active:scale-[0.98]">Copy as prompt</button>
+          <button type="button" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-haspopup="menu" aria-label="More export formats"
+            class="rounded-r-md border-l border-surface/30 bg-apricot px-2.5 text-surface transition hover:brightness-105">
+            <svg class="h-4 w-4 transition-transform" :class="{ 'rotate-180': menuOpen }" viewBox="0 0 20 20" fill="currentColor"><path d="M5.2 7.7a.75.75 0 0 1 1.06.04L10 11.6l3.74-3.86a.75.75 0 1 1 1.08 1.04l-4.28 4.42a.75.75 0 0 1-1.08 0L5.18 8.78a.75.75 0 0 1 .02-1.08Z"/></svg>
+          </button>
+          <Transition name="wz-fade">
+            <div v-if="menuOpen" role="menu" class="absolute right-0 bottom-full z-30 mb-2 w-48 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg">
+              <button v-for="item in menuItems" :key="item.label" type="button" role="menuitem" @click="item.run(); menuOpen = false"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-bg">
+                <span class="w-4 text-center text-muted">{{ item.icon }}</span>{{ item.label }}
+              </button>
+            </div>
+          </Transition>
+        </div>
+    </div>
+  </footer>
+
+  <!-- Scroll to top -->
+  <Transition name="wz-fade">
+    <button v-if="showTop" type="button" @click="scrollTop" aria-label="Back to top"
+      class="fixed bottom-20 right-5 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-lagoon text-surface shadow-lg transition hover:-translate-y-0.5 hover:brightness-110">↑</button>
+  </Transition>
+
+  <!-- Toast -->
+  <Transition name="wz-fade">
+    <div v-if="toast" class="fixed bottom-20 left-1/2 z-40 -translate-x-1/2 rounded-md bg-ink px-3.5 py-2 text-sm text-bg shadow-lg">{{ toast }}</div>
+  </Transition>
+</div>
+
+<script>
+const { createApp, reactive, ref, computed, watch, nextTick } = Vue;
+const config = window.WIZARD;
+const PREFIX = "wizard-enc:v1:";
+const STORAGE_KEY = `wizard:${config.id}`;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const allFields = config.sections.flatMap((section) => section.fields);
+document.title = config.title;
+
+const storage = {
+  read() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+  },
+  write(data) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  },
+  clear() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  },
+};
+
+const toBase64 = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
+const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+// RSA-OAEP-256 wraps a fresh AES-256-GCM key per value: see secrets.mjs.
+async function encrypt(plaintext) {
+  const publicKey = await crypto.subtle.importKey("spki", fromBase64(config.publicKey), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+  const aesKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, new TextEncoder().encode(plaintext));
+  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, await crypto.subtle.exportKey("raw", aesKey));
+  return PREFIX + [wrapped, iv, sealed].map(toBase64).join(".");
+}
+
+const isEmpty = (value) => value === "" || value === null || value === undefined || (Array.isArray(value) && !value.length);
+
+// Format rules for a non-empty value. Returns the message to show, or "".
+function checkFormat(field, value) {
+  const text = String(value);
+  if (field.type === "email" && !EMAIL_RE.test(text)) return "Enter a valid email address, like name@example.com.";
+  if (field.type === "url") {
+    try {
+      if (!/^https?:$/.test(new URL(text).protocol)) throw new Error();
+    } catch {
+      return "Enter a full URL, starting with https://.";
+    }
+  }
+  if (field.type === "number") {
+    const number = Number(text);
+    if (Number.isNaN(number)) return "Enter a number.";
+    if (field.min !== undefined && number < field.min) return `Must be ${field.min} or more.`;
+    if (field.max !== undefined && number > field.max) return `Must be ${field.max} or less.`;
+  }
+  if (field.minLength && text.length < field.minLength) return `At least ${field.minLength} characters.`;
+  if (field.maxLength && text.length > field.maxLength) return `${field.maxLength} characters at most.`;
+  if (field.pattern && !new RegExp(field.pattern).test(text)) return field.patternMessage || "Doesn't match the expected format.";
+  return "";
+}
+
+const defaultOf = (field) => field.default ?? (field.type === "checkbox" ? [] : field.type === "boolean" ? false : "");
+
+createApp({
+  setup() {
+    const saved = storage.read();
+    const answers = reactive({});
+    for (const field of allFields) {
+      if (field.type === "secret") continue;
+      answers[field.id] = saved[field.id] ?? defaultOf(field);
+    }
+    const sealed = reactive(Object.fromEntries(allFields.filter((f) => f.type === "secret" && saved[f.id]).map((f) => [f.id, saved[f.id]])));
+    const editing = reactive({});
+    const revealed = reactive({});
+    const touched = reactive({});
+    const secretErrors = reactive({});
+    const page = ref(0);
+    const direction = ref("wz-forward");
+    const shaking = ref("");
+    const showTop = ref(false);
+    const toast = ref("");
+    const fallback = ref("");
+    const menuOpen = ref(false);
+    const sections = config.sections;
+    const current = computed(() => sections[page.value]);
+
+    const hasSecrets = allFields.some((f) => f.type === "secret");
+    const authorWarning = hasSecrets && !config.publicKey
+      ? "This wizard has secret fields but no publicKey: secrets can't be saved or exported. Generate one with `node secrets.mjs keygen <path>`."
+      : "";
+
+    const persist = () => storage.write({ ...answers, ...sealed });
+    const hasAnswers = computed(() => allFields.some((f) =>
+      f.type === "secret" ? sealed[f.id] : JSON.stringify(answers[f.id]) !== JSON.stringify(defaultOf(f))));
+    watch(answers, persist, { deep: true });
+
+    const valueOf = (field) => (field.type === "secret" ? sealed[field.id] || "" : answers[field.id]);
+    const isVisible = (field) => {
+      const rule = field.showIf;
+      if (!rule) return true;
+      const value = answers[rule.field];
+      return "in" in rule ? rule.in.includes(value) : value === rule.equals;
+    };
+    const visibleFields = (section) => section.fields.filter(isVisible);
+
+    // Full check of a field, whether or not it was touched.
+    const validate = (field) => {
+      if (field.type === "secret" && secretErrors[field.id]) return secretErrors[field.id];
+      const value = valueOf(field);
+      if (isEmpty(value)) return field.required ? "This one is required." : "";
+      return field.type === "secret" ? "" : checkFormat(field, value);
+    };
+    const errorFor = (field) => (touched[field.id] || secretErrors[field.id] ? validate(field) : "");
+    const touch = (field) => (touched[field.id] = true);
+    const aria = (field) => ({
+      "aria-invalid": errorFor(field) ? "true" : "false",
+      "aria-required": field.required ? "true" : undefined,
+      "aria-describedby": ["hint", "desc", "error"].filter((k) => (k === "hint" ? field.hint : k === "desc" ? field.description : errorFor(field))).map((k) => `${k}-${field.id}`).join(" ") || undefined,
+    });
+
+    const invalidIn = (section) => visibleFields(section).filter((f) => validate(f));
+    const sectionComplete = (section) => !invalidIn(section).length;
+    const progress = computed(() => {
+      const required = sections.flatMap(visibleFields).filter((f) => f.required);
+      const done = required.filter((f) => !isEmpty(valueOf(f))).length;
+      return { done, total: required.length, percent: required.length ? Math.round((done / required.length) * 100) : 100 };
+    });
+    const issues = computed(() => sections.flatMap((section, index) =>
+      invalidIn(section).map((field) => ({ section, index, field, message: validate(field) }))));
+
+    const options = (field) => (field.options || []).map((o) => (typeof o === "object" ? o : { value: o, label: o }));
+    const isChecked = (field, value) => (field.type === "checkbox" ? (answers[field.id] || []).includes(value) : answers[field.id] === value);
+    const toggleOption = (field, value) => {
+      touch(field);
+      if (field.type === "radio") return (answers[field.id] = value);
+      const list = answers[field.id] || [];
+      answers[field.id] = list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+    };
+    const step = (field, sign) => {
+      const amount = field.step || 1;
+      let value = (Number(answers[field.id]) || 0) + sign * amount;
+      if (field.min !== undefined) value = Math.max(field.min, value);
+      if (field.max !== undefined) value = Math.min(field.max, value);
+      answers[field.id] = String(value);
+      touch(field);
+    };
+
+    async function sealSecret(field, input) {
+      const value = input.value.trim();
+      touch(field);
+      delete secretErrors[field.id];
+      if (!value || !config.publicKey) return;
+      const problem = checkFormat(field, value);
+      if (problem) return (secretErrors[field.id] = problem);
+      try {
+        sealed[field.id] = await encrypt(value);
+        input.value = "";
+        editing[field.id] = false;
+        revealed[field.id] = false;
+        persist();
+      } catch (error) {
+        secretErrors[field.id] = `Couldn't encrypt this value: ${error.message}`;
+      }
+    }
+
+    const pad = (n) => String(n).padStart(2, "0");
+    const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+    window.addEventListener("scroll", () => (showTop.value = window.scrollY > 400), { passive: true });
+    document.addEventListener("click", (event) => { if (!event.target.closest("[data-menu]")) menuOpen.value = false; });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") menuOpen.value = false; });
+
+    function go(index) {
+      direction.value = index < page.value ? "wz-back" : "wz-forward";
+      page.value = index;
+      fallback.value = "";
+      menuOpen.value = false;
+      nextTick(() => {
+        scrollTop();
+        document.querySelector(`[data-page="${index}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      });
+    }
+    function shake(id) {
+      shaking.value = "";
+      nextTick(() => (shaking.value = id));
+      setTimeout(() => (shaking.value = ""), 400);
+      document.getElementById(`field-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    function next() {
+      const fields = visibleFields(current.value);
+      for (const field of fields) touch(field);
+      const invalid = fields.filter((f) => validate(f));
+      if (invalid.length) return shake(invalid[0].id);
+      go(page.value + 1);
+    }
+    function focusField(index, id) {
+      go(index);
+      nextTick(() => {
+        touched[id] = true;
+        setTimeout(() => shake(id), 250);
+      });
+    }
+
+    const display = (field) => {
+      const value = valueOf(field);
+      if (isEmpty(value)) return "—";
+      if (field.type === "secret") return "🔒 encrypted";
+      if (field.type === "boolean") return value ? "Yes" : "No";
+      if (Array.isArray(value)) return value.join(", ");
+      return String(value);
+    };
+
+    const answered = () => sections.flatMap(visibleFields).filter((f) => !isEmpty(valueOf(f)));
+    const exportJson = () => JSON.stringify({
+      wizard: config.id,
+      title: config.title,
+      exportedAt: new Date().toISOString(),
+      answers: Object.fromEntries(answered().map((f) => [f.id, valueOf(f)])),
+    }, null, 2);
+    const exportText = () => sections.map((section) => {
+      const lines = visibleFields(section).map((f) => `- ${f.label}: ${f.type === "secret" && sealed[f.id] ? sealed[f.id] : display(f)}`);
+      return `${section.title}\n${lines.join("\n")}`;
+    }).join("\n\n");
+    function exportPrompt() {
+      const envFile = config.envFile || ".env";
+      const lines = [config.prompt?.intro, `Apply the answers to the "${config.title}" wizard (${config.id}):`].filter(Boolean);
+      const others = [];
+      for (const field of answered()) {
+        const raw = valueOf(field);
+        const encrypted = field.type === "secret";
+        const shown = encrypted ? "the decrypted value" : `\`${display(field)}\``;
+        const targets = field.target || {};
+        const actions = [];
+        if (targets.env) actions.push(`write \`${targets.env}\` = ${shown} to \`${envFile}\``);
+        if (targets.secret) actions.push(`set the GitHub secret \`${targets.secret}\` to ${shown}`);
+        if (targets.var) actions.push(`set the GitHub variable \`${targets.var}\` to ${shown}`);
+        if (!actions.length) {
+          others.push(`- ${field.label}: ${encrypted ? raw : display(field)}`);
+          continue;
+        }
+        lines.push(`- ${field.label}: ${actions.join(", and ")}.`);
+        if (encrypted) lines.push(`  Encrypted value, decrypt it with \`${config.decrypt} ${config.keyPath} '${raw}'\``);
+      }
+      if (others.length) lines.push("", "Other answers:", ...others);
+      if (config.prompt?.outro) lines.push("", config.prompt.outro);
+      return lines.join("\n");
+    }
+
+    async function copy(format) {
+      const text = { prompt: exportPrompt, json: exportJson, text: exportText }[format]();
+      try {
+        await navigator.clipboard.writeText(text);
+        fallback.value = "";
+        flash(`Copied as ${format}`);
+      } catch {
+        fallback.value = text;
+        flash("Copy blocked: select the text below");
+      }
+    }
+    function download() {
+      const url = URL.createObjectURL(new Blob([exportJson()], { type: "application/json" }));
+      Object.assign(document.createElement("a"), { href: url, download: `${config.id}-answers.json` }).click();
+      URL.revokeObjectURL(url);
+      flash("Downloaded");
+    }
+    const menuItems = [
+      { label: "Copy as JSON", icon: "{}", run: () => copy("json") },
+      { label: "Copy as text", icon: "¶", run: () => copy("text") },
+      { label: "Download JSON", icon: "↓", run: download },
+    ];
+    function clearAll() {
+      if (!confirm("Clear every answer saved in this browser?")) return;
+      storage.clear();
+      for (const field of allFields) {
+        delete touched[field.id];
+        delete secretErrors[field.id];
+        if (field.type === "secret") delete sealed[field.id];
+        else answers[field.id] = defaultOf(field);
+      }
+      go(0);
+      flash("Answers cleared");
+    }
+    function flash(message) {
+      toast.value = message;
+      clearTimeout(flash.timer);
+      flash.timer = setTimeout(() => (toast.value = ""), 2200);
+    }
+
+    return {
+      config, sections, page, direction, shaking, current, answers, sealed, editing, revealed, showTop, toast, fallback,
+      menuOpen, menuItems, authorWarning, hasAnswers, progress, issues, visibleFields, sectionComplete, options, isChecked,
+      toggleOption, step, sealSecret, errorFor, touch, aria, pad, go, next, focusField, display, copy, clearAll, scrollTop,
+    };
+  },
+}).mount("#app");
+</script>
+</body>
+</html>
