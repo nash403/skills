@@ -4,7 +4,7 @@ This repo holds my personal agent skills, published two ways from the same files
 
 Skills are flat: one `skills/<name>/SKILL.md` per skill, with `name` (matching the folder) and `description` in its frontmatter. The plugin loads `skills/` by default, so `plugin.json` has no `skills` array.
 
-`hooks/hooks.json` and its scripts ship with the plugin only: skills.sh installs skills, not hooks. A hook nudges; the judging stays in a skill, so a skills.sh install still works without it.
+`hooks/hooks.json` and its scripts ship with the plugin only: skills.sh installs skills, not hooks. A hook nudges or gates; the judging stays in a skill, so a skills.sh install still works without it. Each hook has its own `hooks/<name>/` folder with a `test.sh`; run `pnpm test:hooks` after touching one.
 
 ## Published means committed
 

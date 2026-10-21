@@ -1,13 +1,25 @@
 {
-  "description": "Nudge the agent to sync the ticket status after a push, merge, PR or MR",
+  "description": "Check the PR or MR description before a push, and nudge a ticket status sync after pushes, merges, PRs and MRs",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/pr-description/check.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/ticket-status-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/ticket-status-nudge/nudge.sh",
             "timeout": 10
           }
         ]
