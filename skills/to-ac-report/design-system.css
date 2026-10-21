@@ -1,0 +1,217 @@
+/*
+  Shared design system for the acceptance-criteria reports.
+  Owned here; consumed by the to-ac-migration templates as well.
+  Every template inlines this file at write time, so the reports stay
+  self-contained. Tokens and primitives only: anything one template alone uses
+  stays in that template's own inline styles.
+*/
+
+:root {
+  --bg: #FAFBF9; --surface: #FFFFFF; --surface-2: #F1F4F1; --surface-3: #E6ECE8;
+  --ink: #1B2420; --muted: #5C6B63; --faint: #8A998F;
+  --line: #DCE3DE; --line-strong: #B9C6BE;
+  --accent: #0F7B5C; --accent-soft: #E0EFE8;
+  --shadow: 0 1px 3px rgba(27,36,32,.07), 0 6px 18px rgba(27,36,32,.05);
+  --f-info: #2F6DA4; --f-info-bg: #E5EEF7;
+  --f-impl: #8A5A0B; --f-impl-bg: #FBF3E2;
+  --f-gate: #6647A6; --f-gate-bg: #EDE7F9;
+  --f-dest: #BC4A2E; --f-dest-bg: #FBE9E4;
+  --f-dead: #A23B72; --f-dead-bg: #FAE6F0;   /* shared: 👻 here, 🧱 in the migration reports */
+  --f-away: #0B7285; --f-away-bg: #DDF0F3;
+  --f-tech: #4A6072; --f-tech-bg: #E6EDF2;
+  --f-data: #4A56B8; --f-data-bg: #E8EAFA;
+  --f-flip: #63741F; --f-flip-bg: #EEF3DA;
+  --bar-h: 58px; --zone-h: 48px;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  --bg: #121816; --surface: #1A211E; --surface-2: #212A26; --surface-3: #2A342F;
+  --ink: #E6EDE8; --muted: #94A39B; --faint: #74837B;
+  --line: #2C3833; --line-strong: #435047;
+  --accent: #43C398; --accent-soft: #1D3830;
+  --shadow: 0 1px 3px rgba(0,0,0,.45);
+  --f-info: #7FB2E0; --f-info-bg: #17293A;
+  --f-impl: #E0A94F; --f-impl-bg: #33290F;
+  --f-gate: #B49BEC; --f-gate-bg: #271D3D;
+  --f-dest: #F0907A; --f-dest-bg: #3A1C14;
+  --f-dead: #EC8FC2; --f-dead-bg: #38182B;
+  --f-away: #5FC5D6; --f-away-bg: #103036;
+  --f-tech: #9FB6C6; --f-tech-bg: #1A252D;
+  --f-data: #9AA4F2; --f-data-bg: #1D2150;
+  --f-flip: #BACD5C; --f-flip-bg: #242B0E;
+}
+
+body { background: var(--bg); color: var(--ink); }
+.card { background: var(--surface); border: 1px solid var(--line); }
+
+/* The theme switch fades rather than snaps. Backgrounds and borders animate on
+   everything, so nothing is left out of step. `color` animates on <body> only:
+   it inherits, so the prose follows, while the ~1000 cells carrying their own
+   grey would cost 200ms of style recalc for a change between two near-identical
+   greys. Measured on a 500-row report: 50-75ms this way, 80-280ms otherwise. */
+*, *::before, *::after { transition: background-color .3s ease, border-color .3s ease; }
+body { transition: background-color .3s ease, color .3s ease; }
+.card, .flag, thead th, #nav-panel, #dock button {
+  transition: background-color .3s ease, border-color .3s ease, box-shadow .3s ease;
+}
+/* Hover feedback stays immediate; borders keep the slower theme fade. */
+.ac-row { transition: background-color .12s ease; }
+.ac-row td { transition: background-color .12s ease, border-color .3s ease; }
+.copy, .flag-btn, #nav-panel a, #toc a { transition-duration: .12s; }
+
+/* Flag chips, one hue per flag. */
+/* flex: none matters: these chips sit in flex rows next to long labels, and
+   without it the flex algorithm shrinks the box down onto the glyph. */
+.flag { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px;
+  border-radius: 8px; font-size: 14px; line-height: 1; cursor: help; user-select: none; }
+.flag[data-k="info"] { background: var(--f-info-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-info) 30%, transparent); }
+.flag[data-k="impl"] { background: var(--f-impl-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-impl) 30%, transparent); }
+.flag[data-k="gate"] { background: var(--f-gate-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-gate) 30%, transparent); }
+.flag[data-k="dest"] { background: var(--f-dest-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-dest) 38%, transparent); }
+.flag[data-k="dead"] { background: var(--f-dead-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-dead) 30%, transparent); }
+.flag[data-k="away"] { background: var(--f-away-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-away) 30%, transparent); }
+.flag[data-k="tech"] { background: var(--f-tech-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-tech) 30%, transparent); }
+.flag[data-k="data"] { background: var(--f-data-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-data) 30%, transparent); }
+.flag[data-k="flip"] { background: var(--f-flip-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--f-flip) 32%, transparent); }
+
+/* Row emphasis stays restrained: the one category a reader must never miss. */
+.ac-row > td:first-child { border-left: 3px solid transparent; }
+.ac-row[data-flags*="⚠️"] { background: color-mix(in srgb, var(--f-dest-bg) 55%, transparent); }
+.ac-row[data-flags*="⚠️"] > td:first-child { border-left-color: var(--f-dest); }
+.ac-row:hover { background: var(--surface-2); }
+
+/* Filter buttons: pressed, they wear the hue of what they filter. */
+.flag-btn { border: 1px solid var(--line-strong); color: var(--muted); background: transparent;
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.flag-btn:hover { border-color: var(--faint); }
+.flag-btn[aria-pressed="true"] { color: #fff; border-color: transparent; }
+.flag-btn[aria-pressed="true"][data-k="info"] { background: var(--f-info); }
+.flag-btn[aria-pressed="true"][data-k="impl"] { background: var(--f-impl); }
+.flag-btn[aria-pressed="true"][data-k="gate"] { background: var(--f-gate); }
+.flag-btn[aria-pressed="true"][data-k="dest"] { background: var(--f-dest); }
+.flag-btn[aria-pressed="true"][data-k="dead"] { background: var(--f-dead); }
+.flag-btn[aria-pressed="true"][data-k="away"] { background: var(--f-away); }
+.flag-btn[aria-pressed="true"][data-k="tech"] { background: var(--f-tech); }
+.flag-btn[aria-pressed="true"][data-k="data"] { background: var(--f-data); }
+.flag-btn[aria-pressed="true"][data-k="flip"] { background: var(--f-flip); }
+.flag-btn .n { font-variant-numeric: tabular-nums; opacity: .7; font-size: 11px; }
+
+/* The bar scrolls sideways once the controls outgrow it. The scrollbar track is
+   always reserved, so the bar never changes height, and the thumb paints only
+   under the pointer. Chrome ignores ::-webkit-scrollbar once scrollbar-width is
+   set, so both browsers use the standard properties. */
+.search-wrap { position: relative; display: inline-flex; }
+#ac-search { width: 224px; padding: 6px 28px 6px 12px; border-radius: 8px; font-size: 14px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); outline: none; }
+#ac-search::-webkit-search-cancel-button { display: none; }
+#ac-clear { position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--faint); font-size: 11px; line-height: 1; cursor: pointer; }
+#ac-clear:hover { background: var(--surface-3); color: var(--ink); }
+#ac-clear[hidden] { display: none; }
+.bar-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto;
+  scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.bar-strip:hover { scrollbar-color: var(--line-strong) transparent; }
+.bar-strip > * { flex: none; }
+/* Rendered with the group it introduces, so a group with nothing in it takes
+   its separator down with it. */
+.bar-sep { width: 1px; height: 20px; background: var(--line); }
+
+/* Source cell shows the file name and copies the full repo-relative path. */
+.copy { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; line-height: 1.5;
+  padding: 3px 7px; margin: -3px -7px; border-radius: 7px; cursor: pointer; border: 0;
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--muted); background: transparent; text-align: left; }
+.copy:hover { background: var(--surface-3); color: var(--ink); }
+.copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.copy .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.copy .ln { color: var(--faint); }
+.copy svg { flex: none; width: 12px; height: 12px; opacity: 0; transition: opacity .12s; }
+.copy:hover svg, .copy:focus-visible svg { opacity: .55; }
+.copy.done, .copy.done .ln { background: var(--accent-soft); color: var(--accent); }
+.copy.done svg { opacity: 1; }
+
+/* Tips: a quiet, foldable block. Bold lead-ins keep it from reading as a wall. */
+#tips > summary { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .01em; color: var(--muted); list-style: none; }
+#tips > summary::-webkit-details-marker { display: none; }
+#tips > summary::before { content: '▸'; font-size: 10px; transition: transform .15s ease; }
+#tips[open] > summary::before { transform: rotate(90deg); }
+#tips > summary:hover { color: var(--ink); }
+.tips-grid { display: grid; gap: 10px 32px; margin-top: 12px; font-size: 12.5px; line-height: 1.6;
+  color: var(--muted); }
+@media (min-width: 900px) { .tips-grid { grid-template-columns: 1fr 1fr; } }
+.tips-grid p { margin: 0; padding-left: 11px; border-left: 2px solid var(--line); }
+.tips-grid b { font-weight: 600; color: var(--ink); }
+.tips-grid code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3);
+  font-family: var(--mono); font-size: 11.5px; }
+
+.zone-tag { display: inline-grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 9px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 700; }
+.zone-tag.sm { width: 24px; height: 24px; border-radius: 7px; font-size: 12px; }
+
+#toc a { display: flex; align-items: center; gap: 10px; font-size: 13.5px; border-radius: 12px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+#toc a:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Stacked sticky layers: filter bar, then zone title, then table header. */
+.bar { position: sticky; top: 0; z-index: 30; }
+.ac-zone { scroll-margin-top: var(--bar-h); }
+.zone-head { position: sticky; top: var(--bar-h); z-index: 20;
+  background: var(--bg); border-bottom: 1px solid var(--line); }
+.zone-head h2 { margin: 0; }
+.zone-pick { display: inline-flex; align-items: center; gap: 12px; padding: 3px 8px;
+  margin-left: -8px; border: 0; border-radius: 9px; background: transparent; color: inherit;
+  font: inherit; cursor: pointer; }
+.zone-pick:hover { background: var(--surface-2); }
+.zone-pick .caret { color: var(--faint); transition: transform .15s ease; }
+.zone-pick[aria-expanded="true"] .caret { transform: rotate(180deg); }
+thead th { background: var(--surface-2); }
+@media (min-width: 1024px) {
+  .tbl-wrap { overflow: visible; }
+  .ac-zone thead th { position: sticky; top: calc(var(--bar-h) + var(--zone-h)); z-index: 10;
+    box-shadow: inset 0 -1px 0 var(--line); }
+  .ac-zone thead th:first-child { border-top-left-radius: 11px; }
+  .ac-zone thead th:last-child { border-top-right-radius: 11px; }
+}
+
+/* Anchored under the zone title that opened it, not parked in a corner. */
+#nav-panel { position: fixed; z-index: 25; width: 340px; max-height: min(60vh, 420px);
+  overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--surface);
+  border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
+#nav-panel[hidden] { display: none; }
+#nav-panel a { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 9px;
+  color: var(--ink); text-decoration: none; font-size: 13px; }
+#nav-panel a:hover { background: var(--surface-2); }
+#nav-panel a.here { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+#dock { position: fixed; right: 22px; bottom: 22px; z-index: 40;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  opacity: 0; pointer-events: none; transform: translateY(6px);
+  transition: opacity .16s, transform .16s; }
+#dock.on { opacity: 1; pointer-events: auto; transform: none; }
+#dock button { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px;
+  background: var(--accent); color: #fff; border: 0; cursor: pointer; box-shadow: var(--shadow); }
+#dock button:hover { opacity: 1; filter: brightness(1.07); }
+
+/* Cross-report round trip: a reference in one report lands highlighted in the
+   other. The scroll offset, the halo timing and the chip carrying the link are
+   one behaviour in three parts, so they live together. */
+.ac-row { scroll-margin-top: calc(var(--bar-h) + var(--zone-h) + 44px); }
+.ac-row.hit { animation: halo 4.5s ease-out 1; }
+/* Holds at full tint long enough to be found after the jump, then fades. */
+@keyframes halo { 0%, 40% { background: var(--accent-soft); } 100% { background: transparent; } }
+.xlink { display: inline-flex; align-items: center; gap: 8px; padding: 6px 11px;
+  border: 1px solid var(--line-strong); border-radius: 9px; background: transparent;
+  color: var(--muted); font-size: 12.5px; text-decoration: none; }
+.xlink:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+#theme { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: transparent; color: var(--muted); cursor: pointer; }
+#theme:hover { color: var(--ink); border-color: var(--faint); }
+#theme .moon { display: none; }
+:root[data-theme="dark"] #theme .moon { display: block; }
+:root[data-theme="dark"] #theme .sun { display: none; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

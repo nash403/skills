@@ -1,0 +1,1324 @@
+<!doctype html>
+<!--
+  state-of-ac report template, rendered by build.mjs from a report.json: never fill it by hand.
+  build.mjs fills every {{PLACEHOLDER}}, repeats each "each:NAME" comment block once per item,
+  keeps an "if:NAME" comment block only when it applies, and inlines design-system.css.
+  Row contract: data-flags holds the space-separated flag emojis, or "" when none.
+  Source contract: data-path holds the full repo-relative path with its line, the label shows the file name only.
+-->
+<html lang="{{LANG}}" class="scroll-smooth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State of AC: {{TARGET_NAME}}</title>
+<!-- Embedded so the report stays a single shareable file: a bracketed pair of
+     criteria, the second one amber for the implicit rules the report is about. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230F7B5C%22%2F%3E%3Cpath%20d%3D%22M13%206.5H8.5A2.5%202.5%200%200%200%206%209v14a2.5%202.5%200%200%200%202.5%202.5H13%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%2F%3E%3Crect%20x%3D%2217.5%22%20y%3D%228.5%22%20width%3D%229%22%20height%3D%225%22%20rx%3D%222.5%22%20fill%3D%22%23fff%22%2F%3E%3Crect%20x%3D%2217.5%22%20y%3D%2218.5%22%20width%3D%229%22%20height%3D%225%22%20rx%3D%222.5%22%20fill%3D%22%23F2B33D%22%2F%3E%3C%2Fsvg%3E">
+<script>
+  /* Runs before paint: one data-theme attribute drives the whole palette. */
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('soac-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  } catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
+<!-- build.mjs swaps this link for an inline style tag holding design-system.css. -->
+<link rel="stylesheet" href="design-system.css">
+<style>
+  /* Local to this report: the working surfaces the migration reports do not have. */
+  #ctx, #note-editor, #pad {
+    transition: background-color .3s ease, border-color .3s ease, box-shadow .3s ease;
+  }
+  .state-btn, #ctx button { transition-duration: .12s; }
+
+  .sel-cell { width: 42px; }
+  input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .ac-row:has(.sel:checked) { background: var(--accent-soft); }
+  .ac-row:has(.sel:checked):hover { background: color-mix(in srgb, var(--accent-soft) 80%, var(--surface-2)); }
+
+  .act { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px;
+    padding: 6px 10px; font-size: 13px; cursor: pointer; border: 1px solid transparent;
+    background: var(--accent); color: #fff; }
+  .act:hover { filter: brightness(1.06); }
+  .act.ghost { background: transparent; color: var(--muted); border-color: var(--line-strong); }
+  .act.ghost:hover { color: var(--ink); border-color: var(--faint); }
+  .act[hidden] { display: none; }
+
+  /* A reader's own note, deliberately dashed so it never reads as taxonomy. */
+  .flag[data-k="note"] { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); border-style: dashed; }
+  .note-chip { position: relative; cursor: copy; }
+  .note-chip.brim::after { content: ''; position: absolute; top: -2px; right: -2px;
+    width: 7px; height: 7px; border-radius: 50%; background: #F2B33D;
+    box-shadow: 0 0 0 1.5px var(--surface); }
+  .note-chip:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+  .note-chip.copied { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
+  .ac-row[data-flags*="👻"]:not([data-flags*="⚠️"]) td.sel-cell { border-left-color: var(--f-dead); }
+
+  /* View-state toggles wear the filter-button shape, so neighbours in the bar
+     cannot drift apart, but keep their own pressed state: they change what is
+     shown, not what matches. */
+  .state-btn:hover { color: var(--ink); }
+  .state-btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: transparent; }
+
+  /* Right-click marks: crossed stays readable, hidden only shows when revealed. */
+  .ac-row.crossed .c-id, .ac-row.crossed .c-text, .ac-row.crossed .c-note {
+    text-decoration: line-through; text-decoration-thickness: 1px; opacity: .5;
+    transition: opacity .12s ease; }
+  .ac-row.crossed:hover .c-id, .ac-row.crossed:hover .c-text, .ac-row.crossed:hover .c-note {
+    text-decoration: none; opacity: 1; }
+  .ac-row.marked-hidden { opacity: .45; transition: opacity .12s ease; }
+  .ac-row.marked-hidden:hover { opacity: 1; }
+  .ac-row.marked-hidden .c-text::after { content: 'hidden'; margin-left: 8px; padding: 1px 6px;
+    border-radius: 6px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    background: var(--surface-3); color: var(--muted); vertical-align: middle; }
+
+  #ctx, #bulk-menu { position: fixed; z-index: 60; min-width: 176px; padding: 5px;
+    border-radius: 11px; background: var(--surface); border: 1px solid var(--line);
+    box-shadow: var(--shadow); }
+  #ctx[hidden], #bulk-menu[hidden] { display: none; }
+  #ctx button, #bulk-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 9px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--ink);
+    font-size: 13px; text-align: left; cursor: pointer; }
+  #ctx button:hover, #bulk-menu button:hover { background: var(--surface-2); }
+  #ctx svg, #bulk-menu svg { flex: none; width: 14px; height: 14px; opacity: .6; }
+  #ctx hr, #bulk-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--line); }
+  #bulk-menu button[disabled] { opacity: .4; cursor: default; }
+  #bulk-menu button[disabled]:hover { background: transparent; }
+  #bulk-menu .n { margin-left: auto; font-family: var(--mono);
+    font-size: 11px; color: var(--faint); }
+  #bulk-fab .caret { transition: transform .15s ease; }
+  #bulk-fab[aria-expanded="true"] .caret { transform: rotate(180deg); }
+  #ctx .ctx-q { margin-left: 10px; font-family: var(--mono);
+    font-size: 11px; color: var(--faint); }
+
+  /* The page holds still while a note is open: a stray scroll used to close the
+     editor and drop what was typed. The gutter stays reserved so nothing shifts. */
+  html { scrollbar-gutter: stable; }
+  html.note-open { overflow: hidden; }
+
+  #note-editor { position: fixed; z-index: 70; width: 320px; padding: 10px;
+    border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow); }
+  #note-editor[hidden] { display: none; }
+  #note-editor textarea { width: 100%; height: 84px; resize: none; padding: 8px 9px;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    font: inherit; font-size: 13px; line-height: 1.5; outline: none; }
+  #note-editor textarea:focus { border-color: var(--accent); }
+  #note-editor .foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  #note-count { margin-right: auto; font-family: var(--mono);
+    font-size: 11px; color: var(--faint); }
+  #note-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--faint); }
+  #note-cancel { padding: 6px 9px; }
+
+  /* Beside the dock, not above it: the dock column is 146px tall and the panel
+     would sit on top of its own button. */
+  #pad { position: fixed; right: 80px; bottom: 22px; z-index: 45;
+    display: flex; flex-direction: column;
+    width: min(440px, calc(100vw - 102px)); height: min(60vh, 420px);
+    border-radius: 14px; background: var(--surface); border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow); overflow: hidden; }
+  #pad[hidden] { display: none; }
+  .pad-head { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 14px;
+    border-bottom: 1px solid var(--line); background: var(--surface-2); }
+  .pad-title { font-size: 12.5px; font-weight: 600; }
+  #pad-count { margin-left: auto; font-family: var(--mono);
+    font-size: 11px; color: var(--faint); }
+  #pad-copy, #pad-close, #cfg-close { display: grid; place-items: center; width: 24px; height: 24px;
+    border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px;
+    cursor: pointer; }
+  #pad-copy:hover, #pad-close:hover, #cfg-close:hover { background: var(--surface-3); color: var(--ink); }
+  #cfg-close { margin-left: auto; }
+  #pad-copy.done { background: var(--accent-soft); color: var(--accent); }
+  #pad-text { flex: 1; min-height: 0; overflow-y: auto; resize: none; padding: 12px 14px;
+    border: 0; outline: none; background: transparent; color: var(--ink);
+    font: inherit; font-size: 13px; line-height: 1.65; }
+
+  /* Same shell as the workspace panel: one floating surface, two contents. */
+  #cfg { position: fixed; right: 80px; bottom: 22px; z-index: 45;
+    display: flex; flex-direction: column;
+    width: min(400px, calc(100vw - 102px)); max-height: min(70vh, 520px);
+    border-radius: 14px; background: var(--surface); border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow); overflow: hidden; }
+  #cfg[hidden] { display: none; }
+  #cfg-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
+  .cfg-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 9px;
+    border: 0; border-radius: 9px; background: transparent; color: var(--ink);
+    font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .cfg-item:hover { background: var(--surface-2); }
+  .cfg-item[aria-current="true"] { background: var(--accent-soft); }
+  .cfg-item .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; }
+  .cfg-item .meta { margin-left: auto; font-family: var(--mono);
+    font-size: 10.5px; color: var(--faint); }
+  .cfg-item .wipe, .cfg-item .drop { flex: none; display: grid; place-items: center;
+    width: 20px; height: 20px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--faint); font-size: 11px; cursor: pointer; }
+  .cfg-item .wipe:hover, .cfg-item .drop:hover { background: var(--f-dest-bg); color: var(--f-dest); }
+  .cfg-item .wipe svg { width: 13px; height: 13px; }
+  .cfg-foot { border-top: 1px solid var(--line); padding: 10px; background: var(--surface-2); }
+  .cfg-foot .act { width: 100%; justify-content: center; }
+  #cfg-import { margin-top: 8px; }
+  #cfg-import summary { cursor: pointer; font-size: 12px; color: var(--muted); list-style: none; }
+  #cfg-import summary::-webkit-details-marker { display: none; }
+  #cfg-import summary::before { content: '▸ '; }
+  #cfg-import[open] summary::before { content: '▾ '; }
+  #cfg-name, #cfg-paste { width: 100%; margin-top: 8px; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    font: inherit; font-size: 12.5px; outline: none; }
+  #cfg-paste { height: 70px; resize: none; font-family: var(--mono); font-size: 11px; }
+  #cfg-name:focus, #cfg-paste:focus { border-color: var(--accent); }
+  .cfg-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  #cfg-msg { font-size: 11.5px; color: var(--muted); }
+  #cfg-msg.bad { color: var(--f-dest); }
+
+  /* The marker: quiet in the bar, but always on screen. */
+  #cfg-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px;
+    border: 1px solid var(--line-strong); border-radius: 8px; background: transparent;
+    color: var(--muted); font-size: 12.5px; cursor: pointer; }
+  #cfg-chip:hover { color: var(--ink); border-color: var(--faint); }
+  #cfg-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  #pad-fab { position: relative; }
+  #pad-fab[aria-pressed="true"] { box-shadow: var(--shadow), inset 0 0 0 2px var(--bg); }
+  #pad-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
+    background: #F2B33D; box-shadow: 0 0 0 2px var(--accent); }
+  #pad-dot[hidden] { display: none; }
+</style>
+</head>
+<body class="antialiased" data-report-id="{{REPORT_ID}}">
+
+<div class="mx-auto max-w-[1180px] px-6 py-12">
+
+  <header class="border-b pb-9" style="border-color: var(--line)">
+    <p class="text-[11.5px] font-semibold uppercase tracking-[0.16em]" style="color: var(--accent)">State of acceptance criteria</p>
+    <h1 class="mt-3 text-[clamp(28px,4vw,40px)] font-bold leading-[1.12] tracking-[-0.015em]">{{TARGET_NAME}}</h1>
+    <p class="mt-4 max-w-[70ch] text-[16.5px] leading-relaxed" style="color: var(--muted)">{{TARGET_DESCRIPTION}}</p>
+    <dl class="mt-7 flex flex-wrap gap-x-9 gap-y-3 text-sm">
+      <div><dt class="text-[11px] uppercase tracking-wider" style="color: var(--faint)">Target</dt><dd class="mt-0.5 font-mono">{{TARGET_PATH}}</dd></div>
+      <div><dt class="text-[11px] uppercase tracking-wider" style="color: var(--faint)">Criteria</dt><dd class="mt-0.5 font-mono">{{AC_COUNT}}</dd></div>
+      <div><dt class="text-[11px] uppercase tracking-wider" style="color: var(--faint)">Zones</dt><dd class="mt-0.5 font-mono">{{ZONE_COUNT}}</dd></div>
+      <div><dt class="text-[11px] uppercase tracking-wider" style="color: var(--faint)">Files read</dt><dd class="mt-0.5 font-mono">{{FILE_COUNT}}</dd></div>
+      <div><dt class="text-[11px] uppercase tracking-wider" style="color: var(--faint)">Generated</dt><dd class="mt-0.5 font-mono">{{GENERATED}}</dd></div>
+    </dl>
+  </header>
+
+  <section class="mt-12">
+    <h2 class="text-[22px] font-semibold tracking-[-0.01em]">Access</h2>
+    <div class="card mt-4 overflow-x-auto rounded-xl" style="box-shadow: var(--shadow)">
+      <table class="w-full border-collapse text-sm">
+        <thead class="text-left text-[11px] uppercase tracking-wider" style="color: var(--muted)">
+          <tr><th class="px-4 py-3 font-semibold">Entry path</th><th class="px-4 py-3 font-semibold">Prerequisites</th><th class="px-4 py-3 font-semibold">Note</th></tr>
+        </thead>
+        <tbody>
+          <!-- each:access -->
+          <tr class="border-t align-top" style="border-color: var(--line)"><td class="px-4 py-3">{{ENTRY_PATH}}</td><td class="px-4 py-3">{{ENTRY_PREREQUISITES}}</td><td class="px-4 py-3" style="color: var(--muted)">{{ENTRY_NOTE}}</td></tr>
+          <!-- /each:access -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- if:features -->
+  <section class="mt-12">
+    <h2 class="text-[22px] font-semibold tracking-[-0.01em]">Features</h2>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <!-- each:feature -->
+      <div class="card rounded-xl px-4 py-3.5 text-[13.5px] leading-relaxed" style="color: var(--muted)">{{FEATURE}}</div>
+      <!-- /each:feature -->
+    </div>
+  </section>
+  <!-- /if:features -->
+
+  <section class="mt-12">
+    <h2 class="text-[22px] font-semibold tracking-[-0.01em]">Legend</h2>
+    <div id="legend" class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3"></div>
+  </section>
+
+  <details id="tips" class="mt-7" open>
+    <summary>What you can do on this page</summary>
+    <div class="tips-grid">
+      <p><b>Right-click a criterion</b> to cross it out, hide it, write your own note, or filter to the criteria around its source line.</p>
+      <p><b>Click a source</b> to copy its full repo-relative path, or a 📝 marker to copy that note. Hover either to read it in full.</p>
+      <p><b>Tick criteria</b> to copy them as a Markdown table, your own notes included. Shift-click ticks a whole range, and the Actions menu marks or annotates the whole selection at once.</p>
+      <p><b>Filter by flag</b> with the coloured buttons, and jump between zones from the index above or by clicking the zone title while you scroll.</p>
+      <p><b>Search</b> reads the ID, the criterion, and both kinds of note. A file path matches only as an exact prefix or suffix, and <code>File.tsx:112~10</code> matches criteria within ten lines of 112.</p>
+      <p><b>The workspace</b>, in the corner, holds notes about the report as a whole rather than about one criterion.</p>
+      <p><b>Everything you mark</b> lives in this browser alone, and survives a reload.</p>
+      <p><b>Share your work</b> from the configurations button: copy yours, or import one you were sent. An import sits alongside yours, it never replaces it.</p>
+    </div>
+  </details>
+
+  <section class="mt-12">
+    <h2 class="text-[22px] font-semibold tracking-[-0.01em]">Zones</h2>
+    <nav id="toc" class="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3"></nav>
+  </section>
+
+  <div id="bar" class="bar -mx-6 mt-12 border-y px-6 py-3 backdrop-blur"
+       style="border-color: var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent)">
+    <div class="bar-strip">
+      <span class="search-wrap">
+        <input id="ac-search" type="search" placeholder="Filter criteria..." autocomplete="off">
+        <button id="ac-clear" hidden title="Clear the search" aria-label="Clear the search">✕</button>
+      </span>
+      <span id="sep-flags" class="mx-1 h-5 w-px" style="background: var(--line)"></span>
+      <div id="flag-bar" class="flex gap-1.5"></div>
+    </div>
+
+    <div class="bar-strip mt-2">
+      <span id="ac-count" class="font-mono text-xs" style="color: var(--faint)"></span>
+      <button id="cfg-chip" title="Switch configuration"><span id="cfg-dot"></span><span id="cfg-name-label"></span></button>
+      <button id="theme" title="Switch light and dark" aria-label="Switch light and dark">
+        <svg class="sun" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.6v2M10 16.4v2M18.4 10h-2M3.6 10h-2M15.9 4.1l-1.4 1.4M5.5 14.5l-1.4 1.4M15.9 15.9l-1.4-1.4M5.5 5.5 4.1 4.1"/></svg>
+        <svg class="moon" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z"/></svg>
+      </button>
+      <span id="sep-marks" class="mx-1 h-5 w-px" style="background: var(--line)"></span>
+      <button id="t-hide" class="flag-btn state-btn" aria-pressed="false" title="Reveal the criteria you hid, so you can put them back">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><path d="M2 9s2.6-4.5 7-4.5S16 9 16 9s-2.6 4.5-7 4.5S2 9 2 9Z"/><circle cx="9" cy="9" r="1.8"/><path d="M3 15 15 3"/></svg>
+        Hidden <span class="n" id="n-hide">0</span>
+      </button>
+      <button id="t-cross" class="flag-btn state-btn" aria-pressed="false" title="Take the crossed-out criteria out of the view">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><path d="M3 9h12"/><path d="M12.5 5.2C11.7 4.4 10.5 4 9 4 6.8 4 5.5 5 5.5 6.4c0 1 .7 1.8 2 2.3M5.5 12.6c.9.9 2.1 1.4 3.5 1.4 2.2 0 3.6-1 3.6-2.4 0-.8-.4-1.5-1.2-2"/></svg>
+        Crossed <span class="n" id="n-cross">0</span>
+      </button>
+      <button id="t-note" class="flag-btn state-btn" aria-pressed="false" title="Show only the criteria you annotated">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" width="14" height="14"><path d="M12.2 2.8a1.7 1.7 0 0 1 2.4 2.4L7.3 12.5l-3.1.9.9-3.1 7.1-7.5Z"/></svg>
+        Noted <span class="n" id="n-note">0</span>
+      </button>
+      <button id="ac-reset" class="rounded-lg px-2.5 py-1.5 text-sm underline-offset-4 hover:underline" style="color: var(--muted)">Reset</button>
+      <span id="sep-sel" class="mx-1 h-5 w-px" style="background: var(--line)" hidden></span>
+      <button id="md-copy" class="act" hidden>
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1"/></svg>
+        <span id="md-label">Copy as Markdown</span>
+      </button>
+      <button id="bulk-fab" class="act ghost" hidden aria-expanded="false" title="Act on the whole selection">
+        Actions
+        <svg class="caret" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+      </button>
+      <button id="sel-clear" class="act ghost" hidden>Clear</button>
+    </div>
+  </div>
+
+  <!-- each:zone -->
+  <section id="zone-{{ZONE_SLUG}}" class="ac-zone">
+    <div class="zone-head -mx-6 px-6 py-2.5">
+      <h2>
+        <button class="zone-pick" aria-expanded="false" title="Jump to another zone">
+          <span class="zone-tag">{{ZONE_NUM}}</span>
+          <span class="zone-name text-[18px] font-semibold tracking-[-0.01em]">{{ZONE_NAME}}</span>
+          <span class="zone-count font-mono text-xs" style="color: var(--faint)"></span>
+          <svg class="caret" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+        </button>
+      </h2>
+    </div>
+    <div class="card tbl-wrap mt-3.5 overflow-x-auto rounded-xl" style="box-shadow: var(--shadow)">
+      <table class="w-full table-fixed border-collapse text-[13.5px]">
+        <thead class="text-left text-[11px] uppercase tracking-wider" style="color: var(--muted)">
+          <tr>
+            <th class="sel-cell px-3 py-3"><input type="checkbox" class="sel-zone" title="Select every criterion shown in this zone"></th>
+            <th class="w-[96px] whitespace-nowrap px-4 py-3 font-semibold">ID</th>
+            <th class="px-4 py-3 font-semibold">Acceptance criterion</th>
+            <th class="w-[104px] px-4 py-3 font-semibold">Flags</th>
+            <th class="w-[200px] px-4 py-3 font-semibold">Notes</th>
+            <th class="w-[292px] px-4 py-3 font-semibold">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- each:criterion -->
+          <tr class="ac-row border-t align-top" data-id="{{AC_ID}}" data-flags="{{FLAGS}}" style="border-color: var(--line)">
+            <td class="sel-cell px-3 py-3"><input type="checkbox" class="sel" data-id="{{AC_ID}}"></td>
+            <td class="c-id whitespace-nowrap px-4 py-3 font-mono text-[11px]" style="color: var(--faint)">{{AC_ID}}</td>
+            <td class="c-text px-4 py-3 leading-relaxed [overflow-wrap:anywhere]">{{AC_TEXT}}</td>
+            <td class="c-flags whitespace-nowrap px-4 py-2.5"><span class="inline-flex gap-1">{{FLAG_CHIPS}}<span class="note-chip flag" data-k="note" hidden>📝</span></span></td>
+            <td class="c-note px-4 py-3 text-[12px] leading-relaxed [overflow-wrap:anywhere]" style="color: var(--muted)">{{AC_NOTE}}</td>
+            <td class="px-4 py-3">
+              <button class="copy" data-path="{{AC_PATH}}:{{AC_LINE}}" title="Copy {{AC_PATH}}:{{AC_LINE}}">
+                <span class="fn">{{AC_FILE}}</span><span class="ln">:{{AC_LINE}}</span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1"/></svg>
+              </button>
+            </td>
+          </tr>
+          <!-- /each:criterion -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <!-- /each:zone -->
+
+  <p id="ac-empty" class="mt-10 hidden text-sm" style="color: var(--muted)">No criterion matches the current filter.</p>
+
+</div>
+
+<div id="ctx" hidden role="menu" aria-label="Criterion actions"></div>
+
+<div id="bulk-menu" hidden role="menu" aria-label="Actions on the selection"></div>
+
+<div id="note-editor" hidden>
+  <textarea id="note-text" maxlength="500" placeholder="Your note"></textarea>
+  <span id="note-hint">Enter saves, Shift + Enter for a new line</span>
+  <div class="foot">
+    <span id="note-count">0 / 500</span>
+    <button id="note-cancel" class="act ghost" title="Cancel" aria-label="Cancel">✕</button>
+    <button id="note-ok" class="act">OK</button>
+  </div>
+</div>
+
+<div id="cfg" hidden>
+  <div class="pad-head">
+    <span class="pad-title">Configurations</span>
+    <button id="cfg-close" title="Close" aria-label="Close">✕</button>
+  </div>
+  <div id="cfg-list"></div>
+  <div class="cfg-foot">
+    <button id="cfg-export" class="act ghost">Copy this configuration</button>
+    <details id="cfg-import">
+      <summary>Import one you were sent</summary>
+      <input id="cfg-name" placeholder="Whose is it?" maxlength="40">
+      <textarea id="cfg-paste" placeholder="Paste the copied configuration"></textarea>
+      <div class="cfg-row">
+        <button id="cfg-add" class="act">Add it</button>
+        <span id="cfg-msg"></span>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div id="pad" hidden>
+  <div class="pad-head">
+    <span class="pad-title">Workspace notes</span>
+    <span id="pad-count"></span>
+    <button id="pad-copy" title="Copy the workspace notes" aria-label="Copy the workspace notes">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1"/></svg>
+    </button>
+    <button id="pad-close" title="Close the workspace" aria-label="Close the workspace">✕</button>
+  </div>
+  <textarea id="pad-text" maxlength="25000" placeholder="Notes for the whole report"></textarea>
+</div>
+
+<nav id="nav-panel" hidden aria-label="Jump to a zone"></nav>
+
+<div id="dock">
+  <button id="cfg-fab" title="Configurations" aria-label="Configurations" aria-pressed="false">
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h9M15.5 6H17M3 14h3M9.5 14H17"/><circle cx="13.5" cy="6" r="2"/><circle cx="7.5" cy="14" r="2"/></svg>
+  </button>
+  <button id="pad-fab" title="Workspace notes" aria-label="Workspace notes" aria-pressed="false">
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.5h10a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z"/><path d="M7 6.5h6M7 10h6M7 13.5h3.5"/></svg>
+    <span id="pad-dot"></span>
+  </button>
+  <button id="to-top" title="Back to top" aria-label="Back to top">
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V5M5 10l5-5 5 5"/></svg>
+  </button>
+</div>
+
+<script>
+/* ────────────────────────────────────────────────────────────────────────
+   Report behaviour, in three parts:
+
+     MODEL   read once from the static DOM at boot, never re-queried
+     STATE   everything the reader changes, persisted to localStorage
+     RENDER  the only function that writes state back into the DOM
+
+   Every handler does the same thing: mutate state, save() if it should
+   survive a reload, then render(). Nothing else touches the DOM.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Flag taxonomy. Adding one: append here, add a --f-<key> pair in the CSS. */
+const FLAGS = [
+  ['💅', 'info', 'Purely informational, the consumer reads it and takes no action on it'],
+  ['🤫', 'impl', 'Implicit rule, not displayed and not explained anywhere in the interface'],
+  ['🔒', 'gate', 'Gated by role, permission, or feature flag'],
+  ['⚠️', 'dest', 'Destructive or irreversible action'],
+  ['👻', 'dead', 'Dead, unreachable, or inconsistent branch'],
+  ['↗️', 'away', 'Leads elsewhere, destination or sub-surface deliberately not analyzed'],
+  ['🔧', 'tech', 'Off-screen only, no visible outcome: a request, a cache write, a side effect'],
+  ['📊', 'data', 'Emits telemetry or a log worth watching'],
+  ['🔀', 'flip', 'The responsive threshold itself, the point where the layout switches'],
+];
+
+/* Marks a reader puts on a row from the right-click menu. `drops` says how the
+   mark's toggle filters: reveal them, remove them, or keep only them. */
+const MARKS = [
+  { key: 'hide',  cls: 'marked-hidden', mode: 'showHidden',  clearsSelection: true,
+    drops: (marked, on) => marked && !on },
+  { key: 'cross', cls: 'crossed',       mode: 'dropCrossed', clearsSelection: false,
+    drops: (marked, on) => marked && on },
+  { key: 'note',  cls: 'has-note',      mode: 'onlyNoted',   clearsSelection: false,
+    drops: (marked, on) => !marked && on },
+];
+
+/* A note is capped, and appending to one that is nearly full silently loses the
+   tail, so the marker warns before you get there. */
+const NOTE_MAX = 500;
+const NOTE_BRIM = 10;
+
+const ICON = {
+  cross: '<path d="M3 9h12"/><path d="M12.5 5.2C11.7 4.4 10.5 4 9 4 6.8 4 5.5 5 5.5 6.4c0 1 .7 1.8 2 2.3M5.5 12.6c.9.9 2.1 1.4 3.5 1.4 2.2 0 3.6-1 3.6-2.4 0-.8-.4-1.5-1.2-2"/>',
+  hide: '<path d="M2 9s2.6-4.5 7-4.5S16 9 16 9s-2.6 4.5-7 4.5S2 9 2 9Z"/><circle cx="9" cy="9" r="1.8"/><path d="M3 15 15 3"/>',
+  note: '<path d="M12.2 2.8a1.7 1.7 0 0 1 2.4 2.4L7.3 12.5l-3.1.9.9-3.1 7.1-7.5Z"/>',
+  near: '<circle cx="8" cy="8" r="5"/><path d="M11.8 11.8 15.5 15.5"/>',
+  trash: '<path d="M3.5 5h11M7 5V3.5h4V5M5 5l.7 9.5h6.6L13 5"/>',
+  show: '<path d="M2 9s2.6-4.5 7-4.5S16 9 16 9s-2.6 4.5-7 4.5S2 9 2 9Z"/><circle cx="9" cy="9" r="1.8"/>',
+  uncross: '<path d="M12.5 5.2C11.7 4.4 10.5 4 9 4 6.8 4 5.5 5 5.5 6.4c0 1 .7 1.8 2 2.3M5.5 12.6c.9.9 2.1 1.4 3.5 1.4 2.2 0 3.6-1 3.6-2.4 0-.8-.4-1.5-1.2-2"/>',
+  /* The pencil sits low and right so the plus can be large and clear of it. */
+  append: '<path d="M12.4 6.6a1.6 1.6 0 0 1 2.3 2.3l-6.3 6.3-2.9.6.6-2.9 6.3-6.3Z"/><path d="M2.5 4.6h6.5M5.75 1.35v6.5"/>',
+};
+
+const $ = id => document.getElementById(id);
+const el = {
+  search: $('ac-search'), count: $('ac-count'), empty: $('ac-empty'), reset: $('ac-reset'),
+  flagBar: $('flag-bar'), legend: $('legend'), toc: $('toc'),
+  mdCopy: $('md-copy'), mdLabel: $('md-label'), selClear: $('sel-clear'),
+  ctx: $('ctx'), bar: $('bar'), theme: $('theme'),
+  dock: $('dock'), navPanel: $('nav-panel'), toTop: $('to-top'),
+  padText: $('pad-text'),
+};
+
+/* ── MODEL ─────────────────────────────────────────────────────────────── */
+
+const zones = [...document.querySelectorAll('.ac-zone')].map(node => {
+  const items = [...node.querySelectorAll('.ac-row')].map(row => {
+    const path = row.querySelector('.copy').dataset.path;
+    return {
+      row, path,
+      id: row.dataset.id,
+      flags: row.dataset.flags,
+      box: row.querySelector('.sel'),
+      noteChip: row.querySelector('.note-chip'),
+      /* Built once below, since neither the text nor the path ever changes. */
+      line: +path.split(':').pop(),
+      file: path.replace(/:\d+$/, ''),  /* original case, for anything shown to the reader */
+      hay: '',      /* id, criterion and note: what a text search means */
+      pathKey: '',  /* full repo path with its line */
+      fileKey: '',  /* the same without the line */
+      shortRef: '', /* shortest tail of the path no other cited file shares */
+    };
+  });
+  return {
+    node, items,
+    tag: node.querySelector('.zone-tag').textContent,
+    title: node.querySelector('.zone-name').textContent,
+    badge: node.querySelector('.zone-count'),
+    box: node.querySelector('.sel-zone'),
+  };
+});
+
+const items = zones.flatMap(z => z.items);
+
+/* Chip tooltips come from FLAGS, so the legend and the rows can never disagree. */
+const LABEL = Object.fromEntries(FLAGS.map(([, key, label]) => [key, label]));
+for (const chip of document.querySelectorAll('.ac-row .flag[data-k]')) {
+  if (LABEL[chip.dataset.k]) chip.title = LABEL[chip.dataset.k];
+}
+
+/* Middle-truncate, so the tail and therefore the extension stay readable. */
+function short(text, limit = 26) {
+  if (text.length <= limit) return text;
+  const head = (limit - 1) >> 1;
+  return text.slice(0, head) + '\u2026' + text.slice(head + 1 - limit);
+}
+
+/* Case, accents and spacing are all noise for a text filter. */
+const normalize = text => text
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ').trim().toLowerCase();
+for (const it of items) {
+  it.row.querySelector('.fn').textContent = short(it.file.split('/').pop());
+  const cell = sel => it.row.querySelector(sel).textContent;
+  it.hay = normalize([cell('.c-id'), cell('.c-text'), cell('.c-note')].join(' '));
+  it.pathKey = normalize(it.path);
+  it.fileKey = it.pathKey.replace(/:\d+$/, '');
+}
+
+const files = [...new Set(items.map(it => it.fileKey))];
+for (const it of items) it.shortRef = shortestRef(it.file);
+
+/* The shortest tail of a path that no other cited file shares, so the query the
+   menu offers can never point at two files at once. Uniqueness is judged on the
+   normalized keys, but the tail is returned in its original case. */
+function shortestRef(file) {
+  const parts = file.split('/');
+  for (let i = parts.length - 1; i > 0; i--) {
+    const tail = parts.slice(i).join('/');
+    const key = normalize(tail);
+    if (files.filter(f => f === key || f.endsWith('/' + key)).length === 1) return tail;
+  }
+  return file;
+}
+
+/* Personal notes change while the page is open, so they are matched live rather
+   than baked into `hay`. Only annotated rows pay for it. */
+const matchesNote = it => {
+  const note = state.note.get(it.id);
+  return !!note && normalize(note).includes(view.q);
+};
+
+const NEAR_TOLERANCE = 10;
+/* file suffix, a line, an optional tolerance: columns.tsx:112~5 */
+const NEAR = /^(.+):(\d+)~(\d+)?$/;
+
+/* A path is not free text. Matching it loosely makes every row containing
+   "responses" answer to a query about the word, so a path only counts when the
+   query is an exact prefix or suffix of it, and is long enough to mean something.
+   The one fuzzy form is opt-in: `~` widens the match to nearby lines. */
+function matchesPath(it, q) {
+  if (q.length < 3) return false;
+  const near = NEAR.exec(q);
+  if (near) {
+    const [, file, line, tolerance] = near;
+    return it.fileKey.endsWith(file)
+      && Math.abs(it.line - +line) <= (tolerance === undefined ? NEAR_TOLERANCE : +tolerance);
+  }
+  return it.fileKey.startsWith(q) || it.fileKey.endsWith(q) || it.pathKey.endsWith(q);
+}
+
+const byId = new Map(items.map(it => [it.id, it]));
+const tally = flag => items.filter(it => it.flags.includes(flag)).length;
+
+/* ── STATE ─────────────────────────────────────────────────────────────── */
+
+/* Keyed on the target, not the title, so retitling the report keeps the marks. */
+const REPORT = document.body.dataset.reportId;
+const read = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(`soac-${key}:${REPORT}`);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch (e) { return fallback; }
+};
+const write = (key, value) => {
+  try { localStorage.setItem(`soac-${key}:${REPORT}`, JSON.stringify(value)); } catch (e) {}
+};
+
+/* Everything a reader produces lives in a named configuration, so a colleague's
+   copy can be imported alongside your own instead of replacing it. The theme and
+   the folded tips stay outside: they are this browser's taste, not shared work. */
+const CONFIG_COLOURS = ['#4A6072', '#8A5A0B', '#6647A6', '#0B7285', '#A23B72', '#63741F'];
+const emptyData = () => ({ sel: [], hide: [], cross: [], note: [], pad: '' });
+/* First unused colour, so deleting one and adding another cannot produce twins. */
+const nextColour = () => CONFIG_COLOURS.find(c => !configs.some(k => k.colour === c))
+  || CONFIG_COLOURS[configs.length % CONFIG_COLOURS.length];
+
+let configs = read('configs', null);
+let activeId = read('active', null);
+
+if (!configs) {
+  /* First run after the split: adopt whatever the single-config layout held. */
+  configs = [{ id: 'mine', name: 'Mine', colour: CONFIG_COLOURS[0], data: {
+    sel: read('sel', []), hide: read('hide', []), cross: read('cross', []),
+    note: read('note', []), pad: read('pad', ''),
+  } }];
+  activeId = 'mine';
+  /* Persist before dropping the old keys, so a close mid-migration loses nothing. */
+  write('configs', configs);
+  write('active', activeId);
+  for (const old of ['sel', 'hide', 'cross', 'note', 'pad']) {
+    try { localStorage.removeItem(`soac-${old}:${REPORT}`); } catch (e) {}
+  }
+}
+
+const active = () => configs.find(c => c.id === activeId) || configs[0];
+
+const state = { sel: new Set(), hide: new Set(), cross: new Set(), note: new Map() };
+const view = { q: '', flags: new Set(), showHidden: false, dropCrossed: false, onlyNoted: false,
+               zonesOpen: null, padOpen: false, cfgOpen: false };
+
+/* The active configuration is the only thing written; state is its live copy. */
+function save() {
+  const c = active();
+  c.data = { sel: [...state.sel], hide: [...state.hide], cross: [...state.cross],
+             note: [...state.note], pad: el.padText.value };
+  write('configs', configs);
+  write('active', activeId);
+}
+
+function load(id) {
+  activeId = id;
+  const d = active().data;
+  state.sel = new Set(d.sel);
+  state.hide = new Set(d.hide);
+  state.cross = new Set(d.cross);
+  state.note = new Map(d.note);
+  el.padText.value = d.pad || '';
+  if (typeof countPad === 'function') countPad();
+  write('active', activeId);
+}
+
+load(activeId || configs[0].id);
+
+/* ── RENDER ────────────────────────────────────────────────────────────── */
+
+function render() {
+  const flags = [...view.flags];
+  /* A mode can only be on while it has something to act on. */
+  const modes = Object.fromEntries(MARKS.map(m => [m.mode, view[m.mode] && state[m.key].size > 0]));
+  let shown = 0;
+
+  for (const zone of zones) {
+    let visible = 0, picked = 0;
+    for (const it of zone.items) {
+      const dropped = MARKS.some(m => m.drops(state[m.key].has(it.id), modes[m.mode]));
+      const matches = !dropped
+        && (!flags.length || flags.some(f => it.flags.includes(f)))
+        && (!view.q || it.hay.includes(view.q) || matchesNote(it) || matchesPath(it, view.q));
+
+      it.row.hidden = !matches;
+      for (const m of MARKS) it.row.classList.toggle(m.cls, state[m.key].has(it.id));
+
+      const note = state.note.get(it.id);
+      const brim = !!note && note.length >= NOTE_MAX - NOTE_BRIM;
+      it.noteChip.hidden = !note;
+      it.noteChip.classList.toggle('brim', brim);
+      it.noteChip.title = brim ? `${note}\n\n(${NOTE_MAX - note.length} characters left of ${NOTE_MAX})` : (note || '');
+      it.box.checked = state.sel.has(it.id);
+      if (matches) { visible++; if (it.box.checked) picked++; }
+    }
+    zone.node.hidden = visible === 0;
+    zone.badge.textContent = visible === zone.items.length
+      ? `${visible} AC` : `${visible} / ${zone.items.length} AC`;
+    zone.box.checked = visible > 0 && picked === visible;
+    zone.box.indeterminate = picked > 0 && picked < visible;
+    zone.box.disabled = visible === 0;
+    shown += visible;
+  }
+
+  el.count.textContent = `${shown} / ${items.length}`;
+  el.empty.hidden = shown > 0;
+
+  for (const btn of el.flagBar.children) {
+    btn.setAttribute('aria-pressed', String(view.flags.has(btn.dataset.flag)));
+  }
+  let anyMark = false;
+  for (const m of MARKS) {
+    const size = state[m.key].size;
+    $('n-' + m.key).textContent = size;
+    const btn = $('t-' + m.key);
+    btn.hidden = size === 0;
+    btn.setAttribute('aria-pressed', String(modes[m.mode]));
+    anyMark = anyMark || size > 0;
+  }
+  $('sep-marks').hidden = !anyMark;
+
+  $('ac-clear').hidden = !el.search.value;
+  const noSelection = state.sel.size === 0;
+  for (const id of ['md-copy', 'sel-clear', 'sep-sel', 'bulk-fab']) $(id).hidden = noSelection;
+  if (noSelection) showBulk(false);
+  el.mdLabel.textContent = `Copy ${state.sel.size} as Markdown`;
+  el.navPanel.hidden = !view.zonesOpen;
+  for (const pick of document.querySelectorAll('.zone-pick')) {
+    pick.setAttribute('aria-expanded', String(pick === view.zonesOpen));
+  }
+  pad.hidden = !view.padOpen;
+  cfg.hidden = !view.cfgOpen;
+  $('pad-fab').setAttribute('aria-pressed', String(view.padOpen));
+  $('cfg-fab').setAttribute('aria-pressed', String(view.cfgOpen));
+  $('pad-dot').hidden = !el.padText.value;
+}
+
+/* ── ONE-OFF MARKUP built from the model ───────────────────────────────── */
+
+el.legend.innerHTML = FLAGS.map(([flag, key, label]) => `
+  <div class="flex items-center gap-3 rounded-xl px-3 py-2" style="background: var(--f-${key}-bg)">
+    <span class="flag" data-k="${key}" title="${label}">${flag}</span>
+    <span class="text-[13px]" style="color: var(--f-${key})">${label}</span>
+    <span class="ml-auto font-mono text-[11px]" style="color: var(--f-${key}); opacity: .75">${tally(flag)}</span>
+  </div>`).join('');
+
+el.flagBar.innerHTML = FLAGS.filter(([flag]) => tally(flag) > 0).map(([flag, key, label]) => `
+  <button class="flag-btn rounded-lg px-2.5 py-1.5 text-sm transition" data-flag="${flag}" data-k="${key}"
+          aria-pressed="false" title="${label}">${flag} <span class="n">${tally(flag)}</span></button>`).join('');
+$('sep-flags').hidden = el.flagBar.children.length === 0;
+
+const zoneLinks = attrs => zones.map(z => `
+  <a href="#${z.node.id}" data-zone="${z.node.id}" ${attrs}>
+    <span class="zone-tag sm">${z.tag}</span>
+    <span class="font-medium">${z.title}</span>
+    <span class="ml-auto font-mono text-[11px]" style="color: var(--faint)">${z.items.length}</span>
+  </a>`).join('');
+
+el.toc.innerHTML = zoneLinks('class="text-[13.5px]"');
+el.navPanel.innerHTML = zoneLinks('');
+const navLinks = [...el.navPanel.querySelectorAll('a')];
+
+/* ── EVENTS ────────────────────────────────────────────────────────────── */
+
+el.search.addEventListener('input', () => { view.q = normalize(el.search.value); render(); });
+$('ac-clear').addEventListener('click', () => {
+  el.search.value = '';
+  view.q = '';
+  el.search.focus();
+  render();
+});
+
+el.flagBar.addEventListener('click', e => {
+  const btn = e.target.closest('.flag-btn');
+  if (!btn) return;
+  const flag = btn.dataset.flag;
+  view.flags.has(flag) ? view.flags.delete(flag) : view.flags.add(flag);
+  render();
+});
+
+for (const m of MARKS) {
+  $('t-' + m.key).addEventListener('click', () => { view[m.mode] = !view[m.mode]; render(); });
+}
+
+el.reset.addEventListener('click', () => {
+  el.search.value = '';
+  Object.assign(view, { q: '', showHidden: false, dropCrossed: false, onlyNoted: false });
+  view.flags.clear();
+  render();
+});
+
+/* Selection: the checkboxes mirror state.sel, they do not hold it. The anchor
+   for shift-click is deliberately in memory only: it describes a gesture in
+   progress, not work worth carrying to another session. */
+let anchor = null;
+
+/* Handled on click rather than change, because only click carries shiftKey.
+   Keyboard activation of a checkbox fires a click too, with the flag false. */
+document.addEventListener('click', e => {
+  const box = e.target.closest('.sel');
+  if (!box) return;
+  const id = box.closest('.ac-row').dataset.id;
+  const on = box.checked;
+
+  if (e.shiftKey && anchor && anchor !== id) {
+    /* Whatever the click did to this row, the rest of the range follows it.
+       Rows the filter hides are left alone: the zone checkbox already works
+       that way, and reaching a row that is not on screen would be a surprise. */
+    const from = items.findIndex(it => it.id === anchor);
+    const to = items.findIndex(it => it.id === id);
+    const [lo, hi] = from < to ? [from, to] : [to, from];
+    for (const it of items.slice(lo, hi + 1)) {
+      if (!it.row.hidden) on ? state.sel.add(it.id) : state.sel.delete(it.id);
+    }
+  } else {
+    on ? state.sel.add(id) : state.sel.delete(id);
+  }
+  anchor = id;
+  save();
+  render();
+});
+
+document.addEventListener('change', e => {
+  const box = e.target;
+  if (box.classList.contains('sel-zone')) {
+    const zone = zones.find(z => z.box === box);
+    for (const it of zone.items) {
+      if (!it.row.hidden) box.checked ? state.sel.add(it.id) : state.sel.delete(it.id);
+    }
+  } else return;
+  save();
+  render();
+});
+
+el.selClear.addEventListener('click', () => { state.sel.clear(); anchor = null; save(); render(); });
+
+/* Actions on the selection. Each states how many rows it would touch, so an
+   entry that can do nothing says so instead of pretending. Adding one is a line
+   here: nothing else in the page needs to know. */
+const BULK = [
+  { key: 'hide', label: 'Hide', icon: ICON.hide,
+    hits: ids => ids.filter(id => !state.hide.has(id)),
+    run: ids => { for (const id of ids) state.hide.add(id);
+                  state.sel.clear();   /* a row you cannot see should not stay ticked */
+                  anchor = null; } },
+  { key: 'unhide', label: 'Unhide', icon: ICON.show,
+    hits: ids => ids.filter(id => state.hide.has(id)),
+    run: ids => { for (const id of ids) state.hide.delete(id); } },
+  { sep: true },
+  { key: 'cross', label: 'Cross out', icon: ICON.cross,
+    hits: ids => ids.filter(id => !state.cross.has(id)),
+    run: ids => { for (const id of ids) state.cross.add(id); } },
+  { key: 'uncross', label: 'Uncross', icon: ICON.uncross,
+    hits: ids => ids.filter(id => state.cross.has(id)),
+    run: ids => { for (const id of ids) state.cross.delete(id); } },
+  { sep: true },
+  { key: 'note', label: 'Write one note', icon: ICON.note,
+    hits: ids => ids,
+    open: 'replace' },   /* handled by the editor rather than applied on the spot */
+  { key: 'note-append', label: 'Append to notes', icon: ICON.append,
+    hits: ids => ids,
+    open: 'append' },
+  { key: 'note-clear', label: 'Clear notes', icon: ICON.trash,
+    hits: ids => ids.filter(id => state.note.has(id)),
+    run: ids => { for (const id of ids) state.note.delete(id); } },
+];
+
+const bulkMenu = $('bulk-menu');
+
+function showBulk(on) {
+  bulkMenu.hidden = !on;
+  $('bulk-fab').setAttribute('aria-expanded', String(on));
+  if (!on) return;
+  const ids = [...state.sel];
+  bulkMenu.innerHTML = BULK.map(a => {
+    if (a.sep) return '<hr>';
+    const n = a.hits(ids).length;
+    return `<button data-bulk="${a.key}" role="menuitem" ${n ? '' : 'disabled'}>
+      <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6">${a.icon}</svg>
+      ${a.label}<span class="n">${n}</span></button>`;
+  }).join('');
+  const r = $('bulk-fab').getBoundingClientRect();
+  const box = bulkMenu.getBoundingClientRect();
+  bulkMenu.style.left = Math.min(r.left, innerWidth - box.width - 8) + 'px';
+  bulkMenu.style.top = Math.min(r.bottom + 5, innerHeight - box.height - 8) + 'px';
+}
+
+$('bulk-fab').addEventListener('click', () => showBulk(bulkMenu.hidden));
+
+bulkMenu.addEventListener('click', e => {
+  const btn = e.target.closest('[data-bulk]');
+  if (!btn || btn.disabled) return;
+  const action = BULK.find(a => a.key === btn.dataset.bulk);
+  const ids = action.hits([...state.sel]);
+  showBulk(false);
+  if (action.open) return openNote(ids, e.clientX, e.clientY, action.open);
+  action.run(ids);
+  save();
+  render();
+});
+
+function toggleMark(key, id) {
+  const mark = MARKS.find(m => m.key === key);
+  const set = state[key];
+  set.has(id) ? set.delete(id) : set.add(id);
+  /* A row you cannot see should not travel in an export. */
+  if (mark.clearsSelection && set.has(id)) state.sel.delete(id);
+  save();
+  render();
+}
+
+/* ── RIGHT-CLICK MENU ──────────────────────────────────────────────────── */
+
+let ctxRow = null;
+const closeCtx = () => { el.ctx.hidden = true; ctxRow = null; };
+
+const nearQuery = it => `${it.shortRef}:${it.line}~${NEAR_TOLERANCE}`;
+const nearLabel = it => `${short(it.shortRef, 22)}:${it.line}~${NEAR_TOLERANCE}`;
+
+const item = (act, icon, label) =>
+  `<button data-act="${act}" role="menuitem"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6">${icon}</svg>${label}</button>`;
+
+document.addEventListener('contextmenu', e => {
+  const row = e.target.closest('.ac-row');
+  if (!row) return closeCtx();
+  e.preventDefault();
+  closeNote();
+  ctxRow = row;
+  const id = row.dataset.id;
+  const noted = state.note.has(id);
+  el.ctx.innerHTML = [
+    item('cross', ICON.cross, state.cross.has(id) ? 'Uncross' : 'Cross out'),
+    item('hide', ICON.hide, state.hide.has(id) ? 'Unhide' : 'Hide'),
+    '<hr>',
+    item('note', ICON.note, noted ? 'Edit my note' : 'Add my note'),
+    noted ? item('note-delete', ICON.trash, 'Delete my note') : '',
+    '<hr>',
+    item('near', ICON.near,
+      `Nearby criteria <span class="ctx-q" title="${nearQuery(byId.get(id))}">${nearLabel(byId.get(id))}</span>`),
+  ].join('');
+  el.ctx.hidden = false;
+  const box = el.ctx.getBoundingClientRect();
+  el.ctx.style.left = Math.min(e.clientX, innerWidth - box.width - 8) + 'px';
+  el.ctx.style.top = Math.min(e.clientY, innerHeight - box.height - 8) + 'px';
+});
+
+document.addEventListener('click', e => {
+  /* A panel that re-renders on click detaches e.target, and closest() on a
+     detached node answers null, which would read as a click outside. The path
+     is captured at dispatch, so it still knows where the click came from. */
+  const path = e.composedPath();
+  const inside = sel => path.some(n => n.nodeType === 1 && n.matches(sel));
+
+  const action = e.target.closest('#ctx [data-act]');
+  if (action && ctxRow) {
+    const id = ctxRow.dataset.id;
+    const act = action.dataset.act;
+    closeCtx();
+    if (act === 'near') {
+      el.search.value = nearQuery(byId.get(id));
+      view.q = normalize(el.search.value);
+      render();
+    }
+    else if (act === 'note') openNote([id], e.clientX, e.clientY);
+    else if (act === 'note-delete') { state.note.delete(id); save(); render(); }
+    else toggleMark(act, id);
+    return;
+  }
+  if (!inside('#ctx')) closeCtx();
+  /* #bulk-note opens the editor from outside it, so its own click must not
+     count as a click away. */
+  if (!inside('#note-editor') && !inside('#bulk-menu')) closeNote();
+  if (!bulkMenu.hidden && !inside('#bulk-menu') && !inside('#bulk-fab')) showBulk(false);
+  if (view.cfgOpen && !inside('#cfg')) showCfg(false);
+  if (view.zonesOpen && !inside('#nav-panel') && !inside('.zone-pick')) { view.zonesOpen = null; render(); }
+});
+
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  closeCtx();
+  closeNote();
+  showBulk(false);
+  if (view.padOpen) showPad(false);
+  if (view.cfgOpen) showCfg(false);
+  if (view.zonesOpen) { view.zonesOpen = null; render(); }
+});
+
+/* ── PERSONAL NOTES ────────────────────────────────────────────────────── */
+
+const noteBox = $('note-text');
+let noteFor = [];
+let noteMode = 'replace';
+
+function closeNote() {
+  $('note-editor').hidden = true;
+  noteFor = [];
+  document.documentElement.classList.remove('note-open');
+}
+
+function openNote(ids, x, y, mode = 'replace') {
+  noteFor = ids;
+  noteMode = mode;
+  document.documentElement.classList.add('note-open');
+  noteBox.value = mode === 'replace' && ids.length === 1 ? (state.note.get(ids[0]) || '') : '';
+  $('note-hint').textContent =
+    mode === 'append' ? `Added to ${ids.length} criteria, cut at ${NOTE_MAX} characters`
+    : ids.length === 1 ? 'Enter saves, Shift + Enter for a new line'
+    : `Applies to ${ids.length} criteria, replacing any note they carry`;
+  countNote();
+  const editor = $('note-editor');
+  editor.hidden = false;
+  const box = editor.getBoundingClientRect();
+  editor.style.left = Math.min(x, innerWidth - box.width - 8) + 'px';
+  editor.style.top = Math.min(y, innerHeight - box.height - 8) + 'px';
+  noteBox.focus();
+  noteBox.setSelectionRange(noteBox.value.length, noteBox.value.length);
+}
+
+function saveNote() {
+  if (!noteFor.length) return;
+  const text = noteBox.value.trim();
+  for (const id of noteFor) {
+    if (noteMode === 'append') {
+      if (!text) continue;
+      const had = state.note.get(id);
+      state.note.set(id, ((had ? had + '\n' : '') + text).slice(0, NOTE_MAX));
+    } else {
+      text ? state.note.set(id, text) : state.note.delete(id);
+    }
+  }
+  save();
+  closeNote();
+  render();
+}
+
+const countNote = () => { $('note-count').textContent = `${noteBox.value.length} / ${NOTE_MAX}`; };
+
+noteBox.addEventListener('input', countNote);
+noteBox.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
+});
+$('note-ok').addEventListener('click', saveNote);
+$('note-cancel').addEventListener('click', closeNote);
+
+/* ── COPYING ───────────────────────────────────────────────────────────── */
+
+const copy = text => navigator.clipboard.writeText(text);
+
+/* Swap a label for a confirmation, then put it back. */
+function flash(node, text, restore, ms = 1200) {
+  clearTimeout(node._flash);
+  node.textContent = text;
+  node._flash = setTimeout(() => { node.textContent = restore; }, ms);
+}
+
+/* The note marker is a copy button: readers paste their own notes elsewhere. */
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.note-chip');
+  if (!chip || chip.hidden) return;
+  const text = state.note.get(chip.closest('.ac-row').dataset.id);
+  if (!text) return;
+  copy(text).then(() => {
+    chip.classList.add('copied');
+    flash(chip, '\u2713', '\u{1F4DD}', 900);
+    setTimeout(() => chip.classList.remove('copied'), 900);
+  }).catch(() => { chip.title = 'Copy blocked by the browser.\n\n' + text; });
+});
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
+  const path = btn.dataset.path;
+  copy(path).then(() => {
+    const fn = btn.querySelector('.fn'), ln = btn.querySelector('.ln');
+    const label = fn.textContent, line = ln.textContent;
+    btn.classList.add('done');
+    ln.textContent = '';
+    flash(fn, 'path copied', label, 1100);
+    setTimeout(() => { btn.classList.remove('done'); ln.textContent = line; }, 1100);
+  }).catch(() => { btn.title = 'Copy blocked by the browser. Full path: ' + path; });
+});
+
+const mdCell = s => (s || '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+
+el.mdCopy.addEventListener('click', () => {
+  const rows = items.filter(it => state.sel.has(it.id));
+  const noted = rows.some(it => state.note.has(it.id));
+  const body = rows.map(it => {
+    const cell = sel => mdCell(it.row.querySelector(sel).textContent);
+    const mine = noted ? ` ${mdCell(state.note.get(it.id))} |` : '';
+    return `| ${cell('.c-id')} | ${cell('.c-text')} | ${cell('.c-note')} |${mine} \`${it.path}\` |`;
+  });
+  const head = noted
+    ? ['| ID | Acceptance criterion | Notes | My note | Source |', '| --- | --- | --- | --- | --- |']
+    : ['| ID | Acceptance criterion | Notes | Source |', '| --- | --- | --- | --- |'];
+  /* The workspace notes close the copy: they are about the report as a whole, so
+     they read after the criteria rather than in a cell of one of them. */
+  const pad = el.padText.value.trim();
+  const tail = pad ? ['', '**Workspace notes**', '', pad] : [];
+  copy([`**${document.title}**`, '`' + location.href + '`', '', ...head, ...body, ...tail].join('\n'))
+    .then(() => flash(el.mdLabel, `${rows.length} copied`, `Copy ${rows.length} as Markdown`))
+    .catch(() => flash(el.mdLabel, 'Copy blocked', `Copy ${rows.length} as Markdown`));
+});
+
+/* ── DOCK: zone jumper and back to top ─────────────────────────────────── */
+
+/* The zone title is the switcher: it already says which zone you are in, so it
+   is also where you go to leave it. The list opens under the title you clicked,
+   which may be the pinned one at the top or any other further down the page. */
+document.addEventListener('click', e => {
+  const pick = e.target.closest('.zone-pick');
+  if (!pick) return;
+  view.zonesOpen = view.zonesOpen === pick ? null : pick;
+  render();
+  if (!view.zonesOpen) return;
+  const r = pick.getBoundingClientRect();
+  const box = el.navPanel.getBoundingClientRect();
+  el.navPanel.style.left = Math.min(r.left, innerWidth - box.width - 8) + 'px';
+  el.navPanel.style.top = Math.min(r.bottom + 5, innerHeight - box.height - 8) + 'px';
+});
+
+el.navPanel.addEventListener('click', e => { if (e.target.closest('a')) { view.zonesOpen = null; render(); } });
+el.toTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+let barHeight = 0;
+let currentZone = null;
+
+function spy() {
+  let here = null;
+  for (const zone of zones) {
+    if (!zone.node.hidden && zone.node.getBoundingClientRect().top <= barHeight + 8) here = zone;
+  }
+  here = here || zones.find(z => !z.node.hidden) || null;
+  if (here === currentZone) return;
+  currentZone = here;
+  for (const link of navLinks) link.classList.toggle('here', link.dataset.zone === here?.node.id);
+}
+
+addEventListener('scroll', () => {
+  el.dock.classList.toggle('on', scrollY > 500 || view.padOpen || view.cfgOpen);
+  closeCtx();
+  if (view.zonesOpen) { view.zonesOpen = null; render(); }
+  spy();
+}, { passive: true });
+
+/* Opening the workspace from the top of the page must not hide its own button. */
+const showDock = () => el.dock.classList.toggle('on', scrollY > 500 || view.padOpen || view.cfgOpen);
+
+/* ── CONFIGURATIONS ────────────────────────────────────────────────────── */
+
+const cfg = $('cfg');
+const cfgMsg = $('cfg-msg');
+const say = (text, bad) => { cfgMsg.textContent = text; cfgMsg.classList.toggle('bad', !!bad); };
+
+function resetImport() {
+  $('cfg-paste').value = '';
+  $('cfg-name').value = '';
+  $('cfg-import').open = false;
+  say('');
+}
+
+function showCfg(on) {
+  view.cfgOpen = on;
+  if (on) {
+    view.padOpen = false;
+    /* Flush anything still in flight, then recount: the summaries are read from
+       the stored data, and the active configuration is only written on change. */
+    clearTimeout(padSave.timer);
+    save();
+    drawConfigs();
+  } else {
+    resetImport();
+  }
+  render();
+  showDock();
+}
+
+function summary(data) {
+  const parts = [
+    [data.note.length, n => `${n} note${n > 1 ? 's' : ''}`],
+    [data.hide.length, n => `${n} hidden`],
+    [data.cross.length, n => `${n} crossed`],
+    [data.sel.length, n => `${n} ticked`],
+  ].filter(([n]) => n).map(([n, label]) => label(n));
+  if (data.pad) parts.push('workspace');
+  return parts.join(' · ') || 'empty';
+}
+
+function drawConfigs() {
+  /* The delete button appears only while another configuration could take over,
+     so the list can never be emptied. */
+  $('cfg-list').innerHTML = configs.map(c => `
+    <div class="cfg-item" data-id="${c.id}" aria-current="${c.id === activeId}">
+      <span class="dot" style="background: ${c.colour}"></span>
+      <span>${c.name}</span>
+      <span class="meta">${summary(c.data)}</span>
+      <button class="wipe" title="Empty this configuration, keeping it in the list">
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 15h7.5"/><path d="M11.4 3.4 4.3 10.5a1.4 1.4 0 0 0 0 2l1.7 1.7a1.4 1.4 0 0 0 2 0l7.1-7.1a1.4 1.4 0 0 0 0-2l-1.7-1.7a1.4 1.4 0 0 0-2 0Z"/><path d="m8.2 6.6 3.7 3.7"/></svg>
+      </button>
+      ${configs.length > 1 ? '<button class="drop" title="Delete this configuration">✕</button>' : ''}
+    </div>`).join('');
+  $('cfg-dot').style.background = active().colour;
+  $('cfg-name-label').textContent = active().name;
+}
+
+$('cfg-list').addEventListener('click', e => {
+  const item = e.target.closest('.cfg-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  if (e.target.closest('.wipe')) {
+    /* Empty it, keep it. No confirmation, and no point checking whether it was
+       already empty. */
+    if (id === activeId) {
+      state.sel.clear(); state.hide.clear(); state.cross.clear(); state.note.clear();
+      el.padText.value = '';
+      countPad();
+      clearTimeout(padSave.timer);
+      save();
+    } else {
+      configs.find(c => c.id === id).data = emptyData();
+      write('configs', configs);
+    }
+    say('Emptied.');
+  } else if (e.target.closest('.drop')) {
+    if (configs.length < 2) return;
+    configs = configs.filter(c => c.id !== id);
+    write('configs', configs);
+    if (id === activeId) load(configs[0].id);
+    say('Deleted.');
+  } else if (id !== activeId) {
+    save();                       /* keep what is on screen before switching */
+    load(id);
+  }
+  drawConfigs();
+  render();
+});
+
+$('cfg-export').addEventListener('click', () => {
+  save();
+  const c = active();
+  copy(JSON.stringify({ soac: 1, report: REPORT, name: c.name, data: c.data }))
+    .then(() => say('Copied. Send it over as a message.'))
+    .catch(() => say('Copy blocked by the browser', true));
+});
+
+$('cfg-add').addEventListener('click', () => {
+  let payload;
+  try { payload = JSON.parse($('cfg-paste').value); } catch (e) { return say('That is not a configuration', true); }
+  if (!payload || payload.soac !== 1 || !payload.data) return say('That is not a configuration', true);
+  if (payload.report !== REPORT) return say('That one belongs to another report', true);
+
+  const data = Object.assign(emptyData(), payload.data);
+  const name = ($('cfg-name').value.trim() || payload.name || 'Imported').slice(0, 40);
+  const id = 'c' + Date.now().toString(36);
+  configs.push({ id, name, colour: nextColour(), data });
+  save();
+  load(id);
+  resetImport();
+  drawConfigs();
+  render();
+  say(`Added, and switched to ${name}.`);
+});
+
+$('cfg-fab').addEventListener('click', e => { e.stopPropagation(); showCfg(!view.cfgOpen); });
+$('cfg-chip').addEventListener('click', e => { e.stopPropagation(); showCfg(!view.cfgOpen); });
+$('cfg-close').addEventListener('click', () => showCfg(false));
+
+/* ── WORKSPACE NOTES ───────────────────────────────────────────────────── */
+
+const pad = $('pad');
+const padSave = () => { clearTimeout(padSave.timer); save(); };
+
+el.padText.value = active().data.pad || '';
+
+function countPad() { $('pad-count').textContent = `${el.padText.value.length} / 25000`; }
+
+function showPad(on) {
+  view.padOpen = on;
+  if (on) view.cfgOpen = false;
+  if (!on) padSave();
+  render();
+  showDock();
+  if (on) el.padText.focus();
+}
+
+/* Typing is debounced so a long note does not write on every keystroke. */
+el.padText.addEventListener('input', () => {
+  countPad();
+  $('pad-dot').hidden = !el.padText.value;
+  clearTimeout(padSave.timer);
+  padSave.timer = setTimeout(padSave, 500);
+});
+
+$('pad-fab').addEventListener('click', e => { e.stopPropagation(); showPad(!view.padOpen); });
+$('pad-close').addEventListener('click', () => showPad(false));
+$('pad-copy').addEventListener('click', () => {
+  if (!el.padText.value) return;
+  const btn = $('pad-copy');
+  copy(el.padText.value)
+    .then(() => { btn.classList.add('done'); setTimeout(() => btn.classList.remove('done'), 900); })
+    .catch(() => { btn.title = 'Copy blocked by the browser'; });
+});
+addEventListener('pagehide', padSave);
+countPad();
+
+/* Remember whether the tips are folded away. */
+const tips = $('tips');
+try { tips.open = localStorage.getItem('soac-tips') !== 'closed'; } catch (e) {}
+tips.addEventListener('toggle', () => {
+  try { localStorage.setItem('soac-tips', tips.open ? 'open' : 'closed'); } catch (e) {}
+});
+
+/* ── THEME ─────────────────────────────────────────────────────────────── */
+
+/* The head script has already stamped data-theme, so this only flips it. */
+el.theme.addEventListener('click', () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('soac-theme', root.dataset.theme); } catch (e) {}
+});
+
+/* ── STICKY OFFSETS ────────────────────────────────────────────────────── */
+
+/* The zone titles and table headers stack under the filter bar, so their
+   offsets come from the measured heights rather than hardcoded numbers.
+   The bar grows and shrinks on its own (export buttons appear, the control
+   strip gains a scrollbar), so watch the elements instead of the window. */
+const zoneHead = zones[0]?.node.querySelector('.zone-head');
+
+function measure() {
+  barHeight = el.bar.offsetHeight;
+  document.documentElement.style.setProperty('--bar-h', barHeight + 'px');
+  if (zoneHead) document.documentElement.style.setProperty('--zone-h', zoneHead.offsetHeight + 'px');
+}
+
+const sizes = new ResizeObserver(measure);
+sizes.observe(el.bar);
+if (zoneHead) sizes.observe(zoneHead);
+addEventListener('resize', () => { closeCtx(); closeNote(); });
+
+measure();
+drawConfigs();
+render();
+spy();
+</script>
+</body>
+</html>
