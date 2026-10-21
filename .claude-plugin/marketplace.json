@@ -5,6 +5,7 @@
     "url": "https://github.com/nash403"
   },
   "description": "nash403's skills, as an installable Claude Code plugin.",
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
   "plugins": [
     {
       "name": "nash403-skills",

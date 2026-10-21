@@ -8,5 +8,6 @@
   },
   "repository": "https://github.com/nash403/skills",
   "license": "MIT",
-  "keywords": ["engineering", "skills"]
+  "keywords": ["engineering", "skills"],
+  "dependencies": ["frontend-design@claude-plugins-official"]
 }
