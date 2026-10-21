@@ -12,7 +12,7 @@ Two ways in, two philosophies:
 - **[skills.sh](https://skills.sh/nash403/skills)** copies editable skill files into your project, for Claude Code, Codex, Cursor or any other agent that supports skills. You pick the skills you want, then hack on them and make them your own.
 
 Pick one: installing both leaves you with every skill twice.
-s
+
 ### 1. Get the skills
 
 <details>
