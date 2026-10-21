@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker and vocabulary should have been provided to you. If not, infer them or ask me, then wait for my confirmation.
+The issue tracker and vocabulary should have been provided to you. If not, look them up in the project context, then infer them or ask me, then wait for my confirmation.
 
 ## Process
 
