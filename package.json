@@ -9,7 +9,8 @@
   "license": "MIT",
   "scripts": {
     "validate": "pnpm validate:skills && claude plugin validate . --strict",
-    "validate:skills": "node scripts/validate-skills.mjs"
+    "validate:skills": "node scripts/validate-skills.mjs",
+    "test:hooks": "for t in hooks/*/test.sh; do bash \"$t\" || exit 1; done"
   },
   "packageManager": "pnpm@12.14.0",
   "devDependencies": {
