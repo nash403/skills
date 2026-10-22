@@ -24,7 +24,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 Read the project's domain glossary and any ADRs in the area you're touching first.
 
-Then spawn a sub-agent to walk the codebase. Don't follow rigid heuristics; explore organically and note where you experience friction:
+Then spawn a sub-agent to walk the codebase, starting from the code map if the project has one. Don't follow rigid heuristics; explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
@@ -53,6 +53,7 @@ Once the user picks a candidate, use `grilling` to walk the decision tree with t
 Side effects happen inline as decisions crystallize:
 
 - **New or sharpened domain terms**: keep the glossary current with `domain-modeling`.
+- **The code map turned out wrong** about an area you explored: offer to fix it.
 - **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing; skip ephemeral reasons ("not worth it right now") and self-evident ones.
 - **Want to explore alternative interfaces for the deepened module?** Use the design-it-twice pattern from `designing-deep-modules`.
 
