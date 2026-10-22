@@ -72,3 +72,5 @@ The same repo also has `dinero-formatting` and `dinero-currency-patterns`. Drop 
 ## Credits
 
 Many of these skills started from ones I found around the web and reshaped to fit how I work. Most of them owe a lot to [Matt Pocock](https://github.com/mattpocock) and [his skills](https://github.com/mattpocock/skills). Thanks, Matt.
+
+`bruce` is inspired by [Rodin](https://gist.github.com/bdebon/e22d0b728abc5f393227440907b334cf), the Socratic sparring partner by [Benjamin](https://github.com/bdebon). Thanks, Benjamin.
