@@ -1,5 +1,7 @@
 # Skills
 
+[![skills.sh](https://skills.sh/b/nash403/skills)](https://skills.sh/nash403/skills)
+
 My personal skills that I use every day to do engineering on my personal and professional projects.
 
 These skills are designed to be small, easy to adapt, and composable. Hack around with them. They work with any model. Make them your own. Enjoy.
