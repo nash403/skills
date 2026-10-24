@@ -31,6 +31,11 @@ Enforce, do not narrate:
 - Directive imperatives. No exploratory prose, no motivational filler. Write the shortest version that still leads to the correct action.
 - Stable terminology. Concrete examples over abstract description when output shape matters.
 - Routing, not ownership. AI agent files point to durable docs; they never own decisions a doc owns.
+- Pointers that get followed. A pointer to another skill or doc says what it holds and when to read it, trigger word first, one trigger per case. When the agent misses what a pointer leads to, sharpen the wording before inlining the content.
+- Disclose by branch. Keep in the file what every case needs; move to a linked file what only some cases need.
+- A done criterion per step. Each workflow step ends on a condition that tells done from not done; a vague one makes the agent stop early.
+- Cut no-ops. Delete any sentence the model would follow anyway, whole rather than trimmed. When unsure, run the skill without it.
+- State the target. Write the behavior you want; a prohibition primes what it forbids. Keep NEVER for hard guardrails, paired with what to do instead.
 - Generic files stay generic. A file that applies across packages names none ("the target package"), except as a labelled example; a package-scoped file is explicit about its paths and commands. Test: would renaming the package force an edit here, though the file isn't about it? Then it's too specific.
 - Let severity keywords carry weight. MUST/DO/PREFER signal importance; drop "it is very important that" and whole-sentence bold.
 
