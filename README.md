@@ -71,6 +71,14 @@ npx skills@latest add dinerojs/skills --skill dinero-best-practices
 
 The same repo also has `dinero-formatting` and `dinero-currency-patterns`. Drop `--skill` to pick from all three.
 
+### Migrate to shoehorn
+
+From [Matt Pocock's skills](https://github.com/mattpocock/skills): migrates test files from `as` type assertions to [shoehorn](https://github.com/total-typescript/shoehorn), which lets tests pass partial data while keeping TypeScript happy. [Skill](https://github.com/mattpocock/skills/blob/main/skills/misc/migrate-to-shoehorn/SKILL.md).
+
+```bash
+npx skills@latest add mattpocock/skills --skill migrate-to-shoehorn
+```
+
 ## Credits
 
 Many of these skills started from ones I found around the web and reshaped to fit how I work. Most of them owe a lot to [Matt Pocock](https://github.com/mattpocock) and [his skills](https://github.com/mattpocock/skills). Thanks, Matt.
