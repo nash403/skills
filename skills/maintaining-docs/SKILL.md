@@ -8,7 +8,7 @@ Your role is to edit docs or AI agent files with the right reviewer stance.
 ## 1. Classify or abort
 
 - **AI agent files**: `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, rules. Files whose purpose is to steer agent behavior.
-- **Project documentation**: `README.md`, `CONTEXT.md`, the docs and code maps (`DOCS-MAP.md`, `CODE-MAP.md`), `ARCHITECTURE.md`, `CODING_STYLE.md`, `CONTRIBUTING.md`, `docs/*.md` or a sub-package's `README.md`.
+- **Project documentation**: `README.md`, the glossary (`GLOSSARY.md`), the docs and code maps (`DOCS-MAP.md`, `CODE-MAP.md`), `ARCHITECTURE.md`, `CODING_STYLE.md`, `CONTRIBUTING.md`, `docs/*.md` or a sub-package's `README.md`.
 - Ambiguous (e.g. a rule that secretly owns architecture content): ask one clarifying question, then pick the dominant intent.
 - Neither: abort with a one-line explanation. Do not edit.
 

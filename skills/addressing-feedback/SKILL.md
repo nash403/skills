@@ -12,6 +12,7 @@ For each thread:
 - **Classify it** in plain words: does it hold up, and what does it call for. For example "Valid, change needed", "Wrong, missing context", "Already fixed", "Question", "Nitpick", "Just a comment". Use whatever words fit, new ones included. Add its importance: high, medium or low.
 - **Already answered** by someone: say who, and whether they're right.
 - **Change needed**: suggest the fix, don't make it.
+- **A convention for the whole project**, not just this change: offer to record it in the coding standards (`CODING_STYLE.md` at the root by default, created if there's none), so nobody has to make the remark twice.
 - **Worth a reply**: draft one, only once the facts are checked. Short, straight to the point, human voice. Language: the one I ask for, else the thread's, else English.
 - **Can't verify a fact, or don't know how to fix it**: ask me directly instead of guessing.
 

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
-When exploring the codebase, read the project's glossary and main documentation (such as `CONTEXT.md` or `CODEMAP.md`) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+When exploring the codebase, read the project's glossary, code map and coding standards (such as `GLOSSARY.md`, `CODE-MAP.md`, `CODING_STYLE.md`) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
 ## Redact
 

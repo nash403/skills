@@ -1,6 +1,6 @@
 ---
 name: domain-modeling
-description: Build and sharpen a project's domain model. Use when discussing codebase terminology, writing or editing its glossary (often CONTEXT.md), or recording or editing an ADR.
+description: Build and sharpen a project's domain model. Use when discussing codebase terminology, writing or editing its glossary (often GLOSSARY.md, or CONTEXT.md in older repos), or recording or editing an ADR.
 ---
 
 # Domain Modeling
@@ -15,7 +15,7 @@ Most repos have a single context:
 
 ```
 /
-├── CONTEXT.md
+├── GLOSSARY.md
 ├── docs/
 │   └── adr/
 │       ├── 0001-event-sourced-orders.md
@@ -23,25 +23,25 @@ Most repos have a single context:
 └── src/
 ```
 
-If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
+If a `GLOSSARY-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
 
 ```
 /
-├── CONTEXT-MAP.md
+├── GLOSSARY-MAP.md
 ├── docs/
 │   └── adr/                          ← system-wide decisions
 ├── src/
 │   ├── ordering/
-│   │   ├── CONTEXT.md
+│   │   ├── GLOSSARY.md
 │   │   └── docs/adr/                 ← context-specific decisions
 │   └── billing/
-│       ├── CONTEXT.md
+│       ├── GLOSSARY.md
 │       └── docs/adr/
 ```
 
-A context isn't tied to a package. A folder deeper down (`src/features/checkout/`) gets its own `CONTEXT.md` only when it has its own language: terms that mean something else there than in the enclosing context, or enough terms of its own to clutter it. Otherwise its terms go in the enclosing glossary. Each term lives in one context only, and `CONTEXT-MAP.md` lists every context, whatever its depth: creating the second context creates the map. For a given piece of code, the glossary that applies is the nearest `CONTEXT.md` up the tree, then those above it.
+A context isn't tied to a package. A folder deeper down (`src/features/checkout/`) gets its own `GLOSSARY.md` only when it has its own language: terms that mean something else there than in the enclosing context, or enough terms of its own to clutter it. Otherwise its terms go in the enclosing glossary. Each term lives in one context only, and `GLOSSARY-MAP.md` lists every context, whatever its depth: creating the second context creates the map. For a given piece of code, the glossary that applies is the nearest `GLOSSARY.md` up the tree, then those above it.
 
-Create files lazily: only when you have something to write. If there's no glossary, create a root `CONTEXT.md` when the first term is resolved. If there's no ADR folder, create `docs/adr/` when the first ADR is needed.
+Create files lazily: only when you have something to write. If there's no glossary, create a root `GLOSSARY.md` when the first term is resolved. If there's no ADR folder, create `docs/adr/` when the first ADR is needed.
 
 ## During the session
 
@@ -63,7 +63,7 @@ When the user states how something works, check whether the code agrees. If you 
 
 ### Update the glossary inline
 
-When a term is resolved, update the glossary right there. Don't batch these up: capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+When a term is resolved, update the glossary right there. Don't batch these up: capture them as they happen. Use the format in [GLOSSARY-FORMAT.md](./GLOSSARY-FORMAT.md).
 
 The glossary should be totally devoid of implementation details. Do not treat it as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
 

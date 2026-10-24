@@ -16,14 +16,14 @@ Committed files come first: the index mostly points to them.
 Read before asking:
 
 - the git remote, and the commit convention from recent `git log`;
-- `CLAUDE.md` or `AGENTS.md`, `README`, `CONTRIBUTING`, `CONTEXT.md`, a glossary, a docs map and a code map whatever their names (`DOCS-MAP.md`, `CODEMAP.md`…), `docs/`, `docs/adr/`;
+- `CLAUDE.md` or `AGENTS.md`, `README`, `CONTRIBUTING`, coding standards (`CODING_STYLE.md`…), a glossary, a docs map and a code map whatever their names (`GLOSSARY.md` or `CONTEXT.md`, `DOCS-MAP.md`, `CODEMAP.md`…), `docs/`, `docs/adr/`;
 - PR or MR templates (`.github/`, `.gitlab/`);
 - the tracker, from the instructions, ticket references in commits and branch names (`ABC-123`, `#12`). If you can reach it, read its teams, projects and labels;
 - the existing index, when this is a rerun.
 
 ### 2. Draft, fact by fact
 
-The facts: git provider and its CLI (`gh`, `glab`), issue tracker (with team and project, or local folder), its labels and what each is for, the ticket reference format, where the glossary, the docs map and the code map are, where each kind of document goes (context, ADR, spec, PRD, RFC), commit and PR or MR conventions, and anything I add.
+The facts: git provider and its CLI (`gh`, `glab`), issue tracker (with team and project, or local folder), its labels and what each is for, the ticket reference format, where the glossary, the coding standards, the docs map and the code map are, where each kind of document goes (glossary, ADR, spec, PRD, RFC), commit and PR or MR conventions, and anything I add.
 
 For each one:
 

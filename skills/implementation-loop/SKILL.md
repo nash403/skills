@@ -31,6 +31,6 @@ Principles for all feature-building workflows. Internalize before starting any w
 ## Workflow
 
 1. **Branch.** If you're on the default branch, create one following the project's naming convention; ask if there's none.
-2. **Build** test-first at pre-agreed seams with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
+2. **Build** following the project's documented coding standards (`CODING_STYLE.md`, `CONTRIBUTING.md`…), test-first at pre-agreed seams with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
 3. **Review** the work with `code-review`.
 4. **Commit** to the current branch only if I explicitly asked. Otherwise, or if unsure, follow `suggest-commit`.

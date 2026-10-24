@@ -7,7 +7,7 @@ description: Test-driven development. Use when the user wants to build features 
 
 TDD is the red → green loop. This skill is what makes that loop produce tests worth keeping: what deserves a test, where tests go, the anti-patterns, and the rules of the loop.
 
-When exploring the codebase, read the project's documentation (such as `CONTEXT.md`, `CODING_STYLE.md`, `CONTRIBUTING.md`) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
+When exploring the codebase, read the project's documentation (such as `GLOSSARY.md`, `CODING_STYLE.md`, `CONTRIBUTING.md`) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
 
 ## What a good test is
 
