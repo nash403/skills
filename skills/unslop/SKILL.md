@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: Cut AI tells from any writing. MUST always apply for all your writing outputs.
+description: Cut AI tells from any writing. MUST always apply for all your writing outputs and when I ask you to unslop / deslop text content.
 ---
 
 # Unslop
