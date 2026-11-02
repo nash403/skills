@@ -5,7 +5,7 @@ argument-hint: "<PR/MR URL>"
 disable-model-invocation: true
 ---
 
-Tell me whether I should approve this Pull Request / Merge Request. Read its title, description, linked issue and existing threads, then the diff along with the callers and surrounding code it touches. Check that:
+Tell me whether I should approve this Pull Request / Merge Request. Read its title, description, linked issue and existing threads, then the diff along with the callers and surrounding code it touches. Review the code and check that:
 
 - it does what it claims;
 - its tests cover the acceptance criteria (stated or inferred);
