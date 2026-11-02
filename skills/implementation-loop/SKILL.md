@@ -1,6 +1,6 @@
 ---
 name: implementation-loop
-description: "Workflow for implementing a ticket, a spec or a feature: mindset, branch, test-first at agreed seams, checks, review, commit only on request. Use whenever asked to implement or build something."
+description: "Workflow for implementing a ticket, a spec or a feature: mindset, framing before code, branch, test-first at agreed seams, checks, review, a user-facing hand back, commit only on request, then continue or hand off. Use whenever asked to implement or build something."
 ---
 
 ## Mindset
@@ -30,7 +30,18 @@ Principles for all feature-building workflows. Internalize before starting any w
 
 ## Workflow
 
-1. **Branch.** If you're on the default branch, create one following the project's naming convention; ask if there's none.
-2. **Build** following the project's documented coding standards (`CODING_STYLE.md`, `CONTRIBUTING.md`…), test-first at pre-agreed seams with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
-3. **Review** the work with `code-review`.
-4. **Commit** to the current branch only if I explicitly asked. Otherwise, or if unsure, follow `suggest-commit`.
+1. **Frame.** Read the spec, its linked tickets and any mockups, then hand back:
+   - findings: what exists, what conflicts, what the APIs, contracts and data it depends on actually expect;
+   - a proposed split: commits, stacked MRs, parallel MRs, or a mix;
+   - the open decisions, TDD seams included, settled with `grilling`, never left as a list.
+
+   End by asking whether we're aligned. Build only after my yes. When I ask a question, answer only that.
+2. **Branch.** If you're on the default branch, create one following the project's naming convention; ask if there's none.
+3. **Build** following the project's documented coding standards (`CODING_STYLE.md`, `CONTRIBUTING.md`…), test-first at the seams agreed in step 1 with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
+4. **Review** the work with `code-review`.
+5. **Hand back** each commit or batch:
+   - what changes for the end user, worded so I can test it by hand;
+   - a few code anchors, never the inventory of every function touched;
+   - risks and open items outside scope, e.g. a backend guard another team owns.
+6. **Commit** to the current branch only if I explicitly asked. Otherwise, or if unsure, follow `suggest-commit`.
+7. **Continue.** When items of the agreed split remain, offer to go on in this session or to write a handoff with `handoff` so a fresh session picks up the next item. The handoff carries the rest of the split, so that session can hand off the item after it too.
