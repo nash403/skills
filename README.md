@@ -45,6 +45,8 @@ npx skills@latest add nash403/skills
 
 The installer asks which skills to take and which agents to install them on. It writes them into your project as ordinary files you own. Nothing updates behind your back: pull my latest changes when you want them with `npx skills@latest update`, and re-run `add` to pick up new skills.
 
+Some skills point to others by name, so they work best installed together.
+
 </details>
 
 ### 2. Bam - you're ready to go.
