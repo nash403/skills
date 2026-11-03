@@ -81,8 +81,18 @@ From [Matt Pocock's skills](https://github.com/mattpocock/skills): migrates test
 npx skills@latest add mattpocock/skills --skill migrate-to-shoehorn
 ```
 
+### Frontend design
+
+From [Anthropic's skills](https://github.com/anthropics/skills): steers your agent toward distinctive, intentional visual design when it builds or reshapes UI, instead of templated defaults. The Claude Code plugin already installs it as a dependency.
+
+```bash
+npx skills@latest add anthropics/skills --skill frontend-design
+```
+
 ## Credits
 
 Many of these skills started from ones I found around the web and reshaped to fit how I work. Most of them owe a lot to [Matt Pocock](https://github.com/mattpocock) and [his skills](https://github.com/mattpocock/skills). Thanks, Matt.
 
 `bruce` is inspired by [Rodin](https://gist.github.com/bdebon/e22d0b728abc5f393227440907b334cf), the Socratic sparring partner by [Benjamin](https://github.com/bdebon). Thanks, Benjamin.
+
+`deslop` is mostly a copy of [Cursor's skill](https://github.com/cursor/plugins) of the same name.
