@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker and vocabulary should have been provided to you. If not, look them up in the project context, then infer them or ask me, then wait for my confirmation.
+The issue tracker and vocabulary should have been provided to you. If not, look them up in the project context, then infer them or ask me, then wait for my confirmation. When I ask for local tickets, or the project's tracker is local, follow `tracking-local-tickets`.
 
 ## Process
 
@@ -49,4 +49,4 @@ Iterate until I approve.
 Publish in dependency order, blockers first, so blocking edges can reference real identifiers. Write each ticket following `ticket-conventions`, its blockers in the related links.
 
 - **Issue tracker** (GitHub, Linear…): one issue per ticket. Use the platform's native blocking and sub-issue relationships where it has them.
-- **Local files**: one file per ticket, `<feature-slug>/issues/<NNN>-<slug>.md`, numbered from `001` in dependency order.
+- **Local tickets**: one file per ticket, following `tracking-local-tickets`, blockers in its `Blocked by:` line.

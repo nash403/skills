@@ -59,6 +59,10 @@ What skills produce and hand to each other.
 Any tracked work item: issue, story, bug or task.
 _Avoid_: issue, card
 
+**Local ticket**:
+A ticket kept as a Markdown file in the repository instead of a remote issue tracker, private or committed.
+_Avoid_: local issue, scratch issue
+
 **Spec**:
 The user stories (or tasks) that reach one goal, plus the decisions they share.
 _Avoid_: epic
