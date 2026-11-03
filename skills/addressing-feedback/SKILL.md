@@ -1,6 +1,6 @@
 ---
 name: addressing-feedback
-description: "Triage feedback threads on my work and draft replies: PR/MR review, comments on a doc, an essay or any artifact, read from a platform or pasted. Use when I ask to read, go through or answer review threads or feedback."
+description: "Triage the feedback others left on my work and draft replies: review comments on my PR/MR, comments on a doc, an essay or any artifact, read from a platform or pasted. Use when I ask to look at, read, check, go through or answer the comments, feedback or review threads on something of mine, e.g. \"what did they say on my MR\", \"look at the feedback on PR 123\"."
 ---
 
 Read every thread, whole: every message, not just the first. Keep the reading order.
