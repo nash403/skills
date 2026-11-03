@@ -21,4 +21,6 @@ I am not always familiar with the subject of the change, so start with a short r
 
 Your verdict is advice; I decide. Whatever it is, draft a review thread for each point worth raising, each anchored to its code. Skip any point an existing thread already raises, unless you can take its reasoning further: then draft a reply in that thread instead. Mark nitpicks as nits. Above each draft, explain the problem to me briefly, with a concrete example when one exists, so I can judge it myself. When something doesn't work, give me in simple words the current versus the expected behavior and, if it's complex, how to reproduce it and the likely root cause. Post nothing until I say so. When told to post: if the PR head moved since the review, re-check each draft against the new head, drop the ones it fixes, and re-anchor the others.
 
+The PR keeps moving after the review: the author replies and pushes while you work. Before answering any follow-up question about it, fetch its branch again and reread the replies in its threads, then name the head sha you read. To see what changed across a rebase, use `git range-diff <old-base>..<old-head> <new-base>..<new-head>`, not `git log <old-head>..<new-head>`.
+
 Keep the output short and easy to review: the recap, the verdict, the drafts. Leave out what you checked and found fine.
