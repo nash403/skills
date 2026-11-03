@@ -7,7 +7,7 @@ The code map is a short navigation guide: what each area is for, where it starts
 
 ## The map
 
-First find the one the project already has, whatever its name (`CODEMAP.md`…): through `CLAUDE.md` or `AGENTS.md`, at the root, in `docs/`, then the project context. When there's none, the default is `CODE-MAP.md` at the root. On creation, point to it from `CLAUDE.md` or `AGENTS.md` in one line, and from the docs map if there is one.
+First find the one the project already has, whatever its name (`CODEMAP.md`…): through `CLAUDE.md` or `AGENTS.md`, at the root, in `docs/`, then the personal context folder. When there's none, the default is `CODE-MAP.md` at the root. On creation, point to it from `CLAUDE.md` or `AGENTS.md` in one line, and from the docs map if there is one.
 
 A large package may own a map in its folder: the root map points to it instead of detailing it.
 

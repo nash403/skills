@@ -9,7 +9,7 @@ Actively build and sharpen the project's domain model as you design: challenge t
 
 ## File structure
 
-First find where the project already keeps its glossary and ADRs: the committed files (`CLAUDE.md`, `AGENTS.md`, `docs/`…), then the project context. Use what exists, whatever its name. The layouts below are the defaults for when there's none yet.
+First find where the project already keeps its glossary and ADRs: the committed files (`CLAUDE.md`, `AGENTS.md`, `docs/`…), then the personal context folder. Use what exists, whatever its name. The layouts below are the defaults for when there's none yet.
 
 Most repos have a single context:
 

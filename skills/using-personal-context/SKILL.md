@@ -1,6 +1,6 @@
 ---
 name: using-personal-context
-description: "Find a project's working context before asking me: issue tracker, labels, git provider, glossary, where docs go, conventions. Reads the committed files, then my private context folder. Use whenever a task needs one of these and the prompt doesn't give it."
+description: "Find a project's context before asking me: issue tracker, labels, git provider, glossary, where docs go, conventions. Reads the committed files, then my personal context folder. Use whenever a task needs one of these and the prompt doesn't give it."
 ---
 
 Look it up in this order, and stop at the first that answers:

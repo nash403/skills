@@ -1,6 +1,6 @@
 ---
 name: setup-personal-context
-description: "Set up my private context folder in a repository, new or existing: where its issue tracker, labels, git provider, glossary, docs and conventions are, as pointers into the committed files plus what only I need. Use when I ask to set up, refresh or fill in my personal context for a project."
+description: "Set up my personal context folder in a repository, new or existing: where its issue tracker, labels, git provider, glossary, docs and conventions are, as pointers into the committed files plus what only I need. Use when I ask to set up, refresh or fill in my personal context for a project."
 ---
 
 # Setup personal context

@@ -1,5 +1,7 @@
 This repo holds my personal agent skills, published two ways from the same files: as the Claude Code plugin `nash403-skills` (marketplace `nash403`, see `.claude-plugin/`) and through skills.sh (`npx skills@latest add nash403/skills`).
 
+`GLOSSARY.md` holds the repo's vocabulary, including the artifacts skills pass to each other. Use its terms when writing a skill.
+
 ## Layout
 
 Skills are flat: one `skills/<name>/SKILL.md` per skill, with `name` (matching the folder) and `description` in its frontmatter. The plugin loads `skills/` by default, so `plugin.json` has no `skills` array.

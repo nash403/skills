@@ -8,10 +8,10 @@ disable-model-invocation: true
 
 Surface architectural friction and propose **deepening opportunities**: refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
 
-This command is _informed_ by the project's domain model and built on a shared design vocabulary:
+This skill is _informed_ by the project's domain model and built on a shared design vocabulary:
 
 - `designing-codebase` holds the architecture vocabulary and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use its terms exactly in every suggestion.
-- The project's glossary (often `GLOSSARY.md`) gives names to good seams; its ADRs (often in `docs/adr/`) record decisions this command should not re-litigate. Find where the project keeps them in the committed files, then the project context. Project documents such as `CODING_STYLE.md` or `CONTRIBUTING.md` may be relevant as well.
+- The project's glossary (often `GLOSSARY.md`) gives names to good seams; its ADRs (often in `docs/adr/`) record decisions this skill should not re-litigate. Find where the project keeps them in the committed files, then the personal context folder. Project documents such as `CODING_STYLE.md` or `CONTRIBUTING.md` may be relevant as well.
 
 ## Process
 

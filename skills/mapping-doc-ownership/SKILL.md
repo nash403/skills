@@ -7,7 +7,7 @@ Every topic has one owner doc; the others link to it. The docs map says which do
 
 ## The map
 
-First find the one the project already has, whatever its name: through `CLAUDE.md` or `AGENTS.md`, in `docs/`, then the project context. When there's none, the default is `DOCS-MAP.md` at the root, in the format of [DOCS-MAP-FORMAT.md](DOCS-MAP-FORMAT.md). Create it only once placement stops being obvious, or when I ask, and point to it from `CLAUDE.md` or `AGENTS.md` in one line.
+First find the one the project already has, whatever its name: through `CLAUDE.md` or `AGENTS.md`, in `docs/`, then the personal context folder. When there's none, the default is `DOCS-MAP.md` at the root, in the format of [DOCS-MAP-FORMAT.md](DOCS-MAP-FORMAT.md). Create it only once placement stops being obvious, or when I ask, and point to it from `CLAUDE.md` or `AGENTS.md` in one line.
 
 A package or app with docs of its own may own a map in its folder: the root map points to it instead of listing its docs. Each topic lives in one map only. For a given file, the map that applies is the nearest one up the tree, then the root.
 

@@ -7,7 +7,7 @@ Align the ticket's status with where the work really is, on the tracker the proj
 
 ## 1. Find the ticket
 
-From the conversation, the branch name or the commit messages (`ABC-123`, `#12`). Find the tracker, its statuses and its labels in the committed files, then the project context. No ticket: say so in one line and stop. Never guess one.
+From the conversation, the branch name or the commit messages (`ABC-123`, `#12`). Find the tracker, its statuses and its labels in the committed files, then the personal context folder. No ticket: say so in one line and stop. Never guess one.
 
 ## 2. Read it first
 
