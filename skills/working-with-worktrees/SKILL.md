@@ -1,6 +1,6 @@
 ---
 name: working-with-worktrees
-description: Where to create git worktrees and how to bootstrap them. Use whenever the user asks to work in, create, or move a worktree.
+description: Where to create git worktrees and how to bootstrap them. Use before creating any git worktree, whoever asks for it (the user or another skill), or when moving one.
 ---
 
 ## Location
@@ -24,3 +24,7 @@ Some config files that tools load may be gitignored, so a fresh worktree starts 
 3. `cp -R <root>/<file> <worktree>/<file>` — never overwrite a file already present in the worktree.
 
 Report which files were copied.
+
+## Removal
+
+A worktree created for a one-off read (review, investigation) is removed once the task ends, unless the user wants to keep it.
