@@ -32,6 +32,8 @@ For each one:
 - **Missing, and only for me, or I want it private**: write it in the index.
 - **Unknown**: ask me. Never guess.
 
+If I decline a committed diff, offer to write that fact in the index instead: some projects aren't mine to change for my own agent's sake. If I decline that too, leave the fact out everywhere.
+
 Show me the whole draft, the index and any committed diff, and wait for my confirmation.
 
 ### 3. Write
