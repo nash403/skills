@@ -1,5 +1,5 @@
 ---
-name: improve-architecture
+name: improve-codebase
 description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
 disable-model-invocation: true
 ---
@@ -10,7 +10,7 @@ Surface architectural friction and propose **deepening opportunities**: refactor
 
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
-- `designing-deep-modules` holds the architecture vocabulary and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use its terms exactly in every suggestion.
+- `designing-codebase` holds the architecture vocabulary and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use its terms exactly in every suggestion.
 - The project's glossary (often `GLOSSARY.md`) gives names to good seams; its ADRs (often in `docs/adr/`) record decisions this command should not re-litigate. Find where the project keeps them in the committed files, then the project context. Project documents such as `CODING_STYLE.md` or `CONTRIBUTING.md` may be relevant as well.
 
 ## Process
@@ -55,6 +55,6 @@ Side effects happen inline as decisions crystallize:
 - **New or sharpened domain terms**: keep the glossary current with `domain-modeling`.
 - **The code map turned out wrong** about an area you explored: offer to fix it.
 - **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing; skip ephemeral reasons ("not worth it right now") and self-evident ones.
-- **Want to explore alternative interfaces for the deepened module?** Use the design-it-twice pattern from `designing-deep-modules`.
+- **Want to explore alternative interfaces for the deepened module?** Use the design-it-twice pattern from `designing-codebase`.
 
 When the design is settled, offer the next step: implement it now, `handoff` or turn it into a spec or tickets.

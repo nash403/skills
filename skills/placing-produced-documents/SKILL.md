@@ -1,5 +1,5 @@
 ---
-name: placing-documents
+name: placing-produced-documents
 description: Decide where to save a document or artifact you produce (ADR, notes, report, plan…) when the skill producing it doesn't set its location. Use before writing any such file.
 ---
 
