@@ -88,5 +88,9 @@ The index of which doc owns which topic, so every piece of documentation has one
 A summary of a session that lets a fresh agent pick up the work.
 _Avoid_: handover, session notes
 
+**PR stack**:
+A set of PRs or MRs where each one targets the branch of another instead of the base branch. Linear when it's a chain, a tree when some branches share a parent.
+_Avoid_: stacked branches, MR chain
+
 **Prototype**:
 Throwaway code built to answer one design question, deleted once answered.

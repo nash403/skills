@@ -30,4 +30,4 @@ A large MR keeps the same opening sentences, then adds what helps a reviewer, wi
 When opening an MR and the option is yours to set:
 
 - Target is the main branch: enable squash on merge.
-- Target is another non-main branch (stacked MR): never enable squash on merge.
+- Target is another branch (stacked MR): follow `managing-pr-stacks`.

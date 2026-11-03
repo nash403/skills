@@ -23,7 +23,7 @@ Read before asking:
 
 ### 2. Draft, fact by fact
 
-The facts: git provider and its CLI (`gh`, `glab`), issue tracker (with team and project, or local folder), its labels and what each is for, the ticket reference format, where the glossary, the coding standards, the docs map and the code map are, where each kind of document goes (glossary, ADR, spec, PRD, RFC), commit and PR or MR conventions, and anything I add.
+The facts: git provider and its CLI (`gh`, `glab`), the command that pushes without running CI (or that there's none), issue tracker (with team and project, or local folder), its labels and what each is for, the ticket reference format, where the glossary, the coding standards, the docs map and the code map are, where each kind of document goes (glossary, ADR, spec, PRD, RFC), commit and PR or MR conventions, and anything I add.
 
 For each one:
 
