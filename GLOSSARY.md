@@ -48,7 +48,7 @@ What skills need to know about a project to work in it: issue tracker, labels, g
 _Avoid_: working context
 
 **Personal context folder**:
-The user's uncommitted folder at a repository root, `.my-context/` by default, pointing skills to the project context plus what only the user needs. Never mentioned in anything committed or shared.
+The user's uncommitted folder for one repository, listed in the user's global instructions, pointing skills to the project context plus what only the user needs. Never mentioned in anything committed or shared.
 _Avoid_: private context folder
 
 ### Artifacts

@@ -5,7 +5,7 @@ description: "Set up my personal context folder in a repository, new or existing
 
 # Setup personal context
 
-The **personal context folder** sits at the repository root: `.my-context/`, unless my instructions name another; if they name none, ask, proposing that one. Its `README.md`, **the index**, tells my skills what they need about this repository that it doesn't say plainly. It's private: never committed, never mentioned in a committed file.
+Each repository has its own **personal context folder**, listed in my global instructions; worktrees share their main checkout's. If this repository isn't listed, ask, proposing `.my-context/` at the main checkout's root. Its `README.md`, **the index**, tells my skills what they need about this repository that it doesn't say plainly. It's private: never committed, never mentioned in a committed file.
 
 Committed files come first: the index mostly points to them.
 
@@ -39,13 +39,15 @@ Show me the whole draft, the index and any committed diff, and wait for my confi
 ### 3. Write
 
 - The index, one `##` section per fact.
-- Add `/<folder>/` to `$(git rev-parse --git-common-dir)/info/exclude` if it's not there: it ignores the folder like `.gitignore` does, but is never committed and is shared by every worktree. Never touch `.gitignore` for this.
+- If the folder is inside the repository, add `/<folder>/` to `$(git rev-parse --git-common-dir)/info/exclude` if it's not there: it ignores the folder like `.gitignore` does, but is never committed and is shared by every worktree. Never touch `.gitignore` for this.
 - The committed edits I approved. Don't commit them.
 
 On a rerun, update in place: keep what I wrote by hand, and check every pointer still resolves.
 
 ### 4. Global instructions
 
-My skills find the folder through my global agent instructions (`~/.claude/CLAUDE.md` for Claude Code). If they don't mention it, suggest adding this line, with the folder's name, and add it on my yes:
+My skills find the folder through my global agent instructions (`~/.claude/CLAUDE.md` for Claude Code). If this repository isn't listed there, suggest its entry, with absolute paths, and add it on my yes. If there's no list yet, suggest it whole:
 
-> My personal context folder is `.my-context/`, at the repository root. Before looking up a project's issue tracker, labels, git provider, docs or conventions, read its `README.md` if it exists.
+> My personal context folders, by repository (a worktree uses its main checkout's). Before looking up a project's issue tracker, labels, git provider, docs or conventions, read the folder's `README.md`:
+>
+> - `~/work/acme`: `~/work/acme/.my-context/`

@@ -7,7 +7,7 @@ Look it up in this order, and stop at the first that answers:
 
 1. The prompt.
 2. Committed files: `CLAUDE.md` or `AGENTS.md`, a glossary (`GLOSSARY.md`, or `CONTEXT.md` in older repos), coding standards (`CODING_STYLE.md`…), `README`, `CONTRIBUTING`, `docs/`.
-3. The personal context folder at the repository root: the one my instructions name, else `.my-context/`. Read its `README.md` and follow its pointers into the committed files. What it states itself is private: use it, but never mention the folder in anything committed or shared.
+3. The personal context folder my global instructions list for this repository (in a worktree, its main checkout's). Read its `README.md` and follow its pointers into the committed files. What it states itself is private: use it, but never mention the folder in anything committed or shared.
 4. The repository itself: the remote, `git log`, branch names. Tell me what you inferred.
 
 Still missing: ask me. If the folder doesn't exist and the question will come up again, suggest `setup-personal-context`.
