@@ -1,6 +1,6 @@
 ---
 name: implementation-loop
-description: "Workflow for implementing a ticket, a spec or a feature: mindset, framing before code, branch, test-first at agreed seams, checks, review, a user-facing hand back, commit only on request, then continue or hand off. Use whenever asked to implement or build something."
+description: "Workflow for building anything, asked in the prompt or written in a ticket or spec: mindset, framing before code, branch, test-first at agreed seams, checks, review, a user-facing hand back, commit only on request, then continue or hand off. Use whenever I ask to build, implement, add or change something in code, even in a one-line request."
 ---
 
 ## Mindset
