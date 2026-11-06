@@ -47,6 +47,8 @@ This step is done when the baseline is ready to paste. The baseline is these sme
 
 ### 4. Spawn both sub-agents in parallel
 
+Start each with a fresh context window.
+
 **Standards sub-agent prompt** should include:
 
 - The full diff command and commit list, and for a PR/MR how to read files at the head.
