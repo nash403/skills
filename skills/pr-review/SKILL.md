@@ -5,7 +5,7 @@ argument-hint: "<PR/MR URL>"
 disable-model-invocation: true
 ---
 
-Review this Pull Request / Merge Request, then give me your verdict on whether to approve it. Read its title, description, linked issue and existing threads. Read the code as it is on the PR's branch, not my working copy: you may work from a worktree on that branch if you need one. Read the callers and surrounding code the diff touches too. Then review its changes the way `code-review` does: against the repo's and the stack's coding standards, and against the linked issue, else its description. Verify each finding against the code before keeping it.
+Review this Pull Request / Merge Request, then give me your verdict on whether to approve it. Read its title, description, linked issue and existing threads. Read the code as it is on the PR's branch, not my working copy: you may work from a worktree on that branch if you need one. Read the callers and surrounding code the diff touches too. Then run `code-review` on the PR's range: Standards against the repo's and the stack's coding standards, Spec against the linked issue, else its description. Verify each finding against the code before keeping it.
 
 On top of that, check that the PR:
 

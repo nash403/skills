@@ -21,7 +21,7 @@ Principles for all feature-building workflows. Internalize before starting any w
 
 ### When the work has a backend
 
-- **Safe data**: a migration is safe on existing data and compatible with the code already deployed (expand, migrate, contract). No destructive migration without my explicit go.
+- **Safe data**: a migration is safe on existing data and compatible with the code already deployed (expand, migrate, contract, following `sequencing-changes`). No destructive migration without my explicit go.
 - **Stable contract**: don't break consumers. Add rather than change, deprecate before removing.
 - **Guarded edges**: every new endpoint checks permissions and validates its input.
 - **Failure modes**: writes, jobs and webhooks are idempotent; outbound calls have timeouts; multi-step writes are atomic.
@@ -32,12 +32,12 @@ Principles for all feature-building workflows. Internalize before starting any w
 
 1. **Frame.** Read the spec, its linked tickets and any mockups, then hand back:
    - findings: what exists, what conflicts, what the APIs, contracts and data it depends on actually expect;
-   - a proposed split: commits, stacked MRs, parallel MRs, or a mix;
+   - a proposed split: commits, stacked MRs, parallel MRs, or a mix, ordered following `sequencing-changes`;
    - the open decisions, TDD seams included, settled with `grilling`, never left as a list.
 
    End by asking whether we're aligned. Build only after my yes. When I ask a question, answer only that.
 2. **Branch.** If you're on the default branch, create one following the project's naming convention; ask if there's none.
-3. **Build** following the project's documented coding standards (`CODING_STYLE.md`, `CONTRIBUTING.md`…), test-first at the seams agreed in step 1 with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
+3. **Build** following the project's documented coding standards (`CODING_STYLE.md`, `CONTRIBUTING.md`…) and `clean-code`, test-first at the seams agreed in step 1 with `tdd`, wherever it applies. Keep the checks green as you go, following `running-checks`.
 4. **Review** the work with `code-review`.
 5. **Hand back** each commit or batch:
    - what changes for the end user, worded so I can test it by hand;

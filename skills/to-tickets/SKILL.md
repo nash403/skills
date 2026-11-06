@@ -27,7 +27,7 @@ Unless you already have, explore the code to understand its current state. Use t
 
 Give each ticket its **blocking edges**: the tickets that must complete before it can start. A ticket with no blockers can start immediately.
 
-**Wide refactors** are the exception: one mechanical change (rename a column, retype a shared symbol) whose blast radius breaks call sites across the codebase, so no vertical slice can land green. Sequence them as expand–contract:
+**Wide refactors** are the exception: one mechanical change (rename a column, retype a shared symbol) whose blast radius breaks call sites across the codebase, so no vertical slice can land green. Sequence them as expand–contract, following `sequencing-changes` when the change crosses a deploy boundary:
 
 1. **Expand**: add the new form beside the old, so nothing breaks.
 2. **Migrate**: move call sites over in batches sized by blast radius (per package, per directory), one ticket per batch, each blocked by the expand. CI stays green because the old form still exists.
