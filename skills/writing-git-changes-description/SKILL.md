@@ -17,7 +17,7 @@ Applies to commits and to MR/PR on GitLab or GitHub or similar platform.
 
 ## Large MR
 
-Weigh the MR by what it costs to review: added or edited source lines count fully; tests, deletions and mechanical edits (a type or property added to match a new type, renames, generated code) count little. Around ten source files and 200 weighted lines, it's large. That's a mark to judge against, not a formula.
+Weigh the MR by what it costs to review: added or edited source lines count fully; tests, deletions and mechanical edits (a type or property added to match a new type, renames, generated code) count little. Around ten source files and 200 weighted lines, it's large. That's a mark to judge against, not a formula. When I ask for an MR with evidence or proof, treat it as large whatever its size.
 
 A large MR keeps the same opening sentences, then adds what helps a reviewer, with or without headings:
 
