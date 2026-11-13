@@ -7,8 +7,13 @@ A **PR stack** is a set of PRs or MRs where each one targets the branch of anoth
 
 ## Opening a stacked PR or MR
 
-- Target the parent's branch, not the base branch.
-- When the option is yours to set, never enable squash on merge: it rewrites the commits the branches above are built on.
+Target the smallest honest diff, so a reviewer never rereads a parent's changes. The **destination** is the branch it finally lands in.
+
+- **No dependency**: target the destination.
+- **One dependency**: target its branch. Different destinations: open as draft, say in the first line where it lands. It shall be retarget once the destination contains the dependency, and marked ready.
+- **Several dependencies**: branch from a merge of their heads, target the destination and state the requirements before review. Ask before creating a join branch.
+
+Always link every dependency as blocking where the platform allows it, never enable squash until it targets the base (it rewrites the commits the branches above are built on), and list the stack in review order.
 
 ## Updating the whole stack onto its base
 
