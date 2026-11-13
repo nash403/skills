@@ -17,11 +17,11 @@ The prompt states both; ask for a missing one before anything else.
 ## Start
 
 1. **Tree**: use the order the input gives (commits, PRs/MRs, tasks). Otherwise have a sub-agent run the Frame step of `implementation-loop`. Done when each node has its scope, branch, base and dependencies.
-2. **Environment**: have a sub-agent learn the checks (`running-checks`), dev servers, ports, shared services, the docs that own each topic and the tracker (`using-personal-context`), then record pointers and hard-won facts in the wiki, with how agents share ports, caches and the lockfile. Done when a sub-agent could start from that section alone.
+2. **Environment**: have a sub-agent learn the checks (`running-checks`), dev servers, ports, shared services, the docs that own each topic and the tracker (`using-personal-context`), then record pointers and hard-won facts in a wiki page, with how agents share ports, caches and the lockfile. Done when a sub-agent could start from that page alone.
 
 ## Sub-agents
 
-- Background, fresh context window, briefed through pointers (the wiki's absolute path, tickets, commits), never copies.
+- Background, fresh context window, briefed through pointers (the absolute path of the wiki's `index.md` or one of its pages, tickets, commits), never copies.
 - Medium effort for implementers, a notch higher for reviewers, a cheaper model for clean-up.
 - Parallel when dependencies and machine load allow: check the load before dispatching builds, tests or dev servers. Benchmarks run alone, several times, reporting the median.
 - Worktrees follow `working-with-worktrees`; never touch my main checkout's index.
@@ -41,9 +41,9 @@ Load `unslop` before writing tickets, comments in code, PR/MR text or the wiki.
 
 ## Wiki
 
-`auto-mode-wiki.md`, created at first need in the personal context folder of the main checkout, beside the work's tickets; else follow `placing-produced-documents`. Read it before each decision and after a compaction.
+A folder, `auto-mode-wiki/`, created at first need in the personal context folder of the main checkout, beside the work's tickets; else follow `placing-produced-documents`. Read its `index.md` before each decision and after a compaction.
 
-You own Environment, State (per node: branch, worktree, PR/MR, status, what waits on me), Decisions and Recurring problems. Each sub-agent writes only its own section. Make small targeted edits, cite sources rather than copy them, and condense when it grows.
+`index.md` is the entry point and the source of truth, and only you edit it: the State (per node: branch, worktree, PR/MR, status, what waits on me), then a link and a one-line summary per page. Keep it to pointers. Every other page covers one topic (the environment, a decision, a recurring problem, a sub-agent's findings) and links the related ones. Sub-agents avoid editing each other's pages. You list new pages in the index. Cite sources rather than copy them, and split a page that grows.
 
 Write history: date each claim, cite the commit (with its repo) for claims about code, and mark a claim superseded by a new dated one instead of rewriting it.
 
