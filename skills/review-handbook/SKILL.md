@@ -1,5 +1,5 @@
 ---
-name: handbook-for-review
+name: review-handbook
 description: "Write a review handbook for a branch or MR: the diff split into cohorts (one concern each, a file can sit in several), each saying what kind of change it is, how deep to read, where to look and what to check. For a human reviewer, with or without an agent. Use when I ask for a review handbook or a guide to review a change."
 ---
 
