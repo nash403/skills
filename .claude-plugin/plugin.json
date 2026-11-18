@@ -9,5 +9,6 @@
   "repository": "https://github.com/nash403/skills",
   "license": "MIT",
   "keywords": ["engineering", "skills"],
+  "types": "./types/index.d.ts",
   "dependencies": ["frontend-design@claude-plugins-official"]
 }

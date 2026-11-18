@@ -1,5 +1,5 @@
 {
-  "description": "Check the PR or MR description before a push, and nudge a ticket status sync after pushes, merges, PRs and MRs",
+  "description": "Check the PR or MR description before a push, and nudge a ticket status sync after pushes, merges, PRs and MRs; draw the git band above the prompt",
   "hooks": {
     "PreToolUse": [
       {
@@ -25,5 +25,8 @@
         ]
       }
     ]
-  }
+  },
+  "modules": [
+    "./register.tsx"
+  ]
 }

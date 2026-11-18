@@ -6,7 +6,12 @@ This repo holds my personal agent skills, published two ways from the same files
 
 Skills are flat: one `skills/<name>/SKILL.md` per skill, with `name` (matching the folder) and `description` in its frontmatter. The plugin loads `skills/` by default, so `plugin.json` has no `skills` array.
 
-`hooks/hooks.json` and its scripts ship with the plugin only: skills.sh installs skills, not hooks. A hook nudges or gates; the judging stays in a skill, so a skills.sh install still works without it. Each hook has its own `hooks/<name>/` folder with a `test.sh`; run `pnpm test:hooks` after touching one.
+`hooks/` ships with the plugin only: skills.sh installs skills, not hooks. A hook nudges, gates or shows state; the judging stays in a skill, so a skills.sh install still works without it. Each hook has its own `hooks/<name>/` folder, in one of two kinds:
+
+- A command hook is a script that `hooks.json` lists under `hooks`, tested by the folder's `test.sh`.
+- A mod is TypeScript that Claude Code runs itself, to draw in its interface or hook its events. `hooks.json` names one module, `hooks/register.tsx`, which registers each mod's `hooks/<name>/register.tsx`. A mod's `$.state` values are declared under the plugin's key in `types/index.d.ts` (`types` in `plugin.json`), and its `*.test.tsx` runs through `claude plugin test .`.
+
+Run `pnpm test:hooks` after touching either kind: it runs every `test.sh`, then `claude plugin test .`.
 
 ## Published means committed
 

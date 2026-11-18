@@ -26,3 +26,6 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Types Claude Code lays beside a plugin it loads from disk
+.claude-plugin/types/
