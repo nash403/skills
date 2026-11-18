@@ -220,7 +220,20 @@ function requestText(request: ChangeRequest) {
   const suffix = request.isDraft && request.state === 'open' ? ' draft' : request.state === 'open' ? '' : ` ${request.state}`
   const color = request.state === 'open' ? 'success' : request.state === 'merged' ? 'merged' : 'inactive'
 
-  return { text: `PR #${request.id}${suffix}`, color: color as Color }
+  return { text: `PR #${request.id}${suffix}`, color: color as Color, url: request.url }
+}
+
+function newRequestPrompt({ branch, base }: GitSnapshot) {
+  return [
+    `Open a PR for \`${branch}\` targeting \`${base}\`, pushing the branch first if needed.`,
+    `Draft its title and description from what this session set out to do, starting from my first request, and from the branch's changes against \`${base}\`, committed or not.`,
+    'Before creating it, show me the draft and ask me to confirm it with the target branch and the options to set: squash on merge, skip CI, labels, draft, and any other the platform offers.',
+    'Once it is created, give me its web link.',
+  ].join(' ')
+}
+
+function canOpenRequest({ request, base }: GitSnapshot) {
+  return request.state === 'none' && base !== null
 }
 
 function needsRebase({ base, vsBase }: GitSnapshot) {
@@ -289,7 +302,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Link, Text } = $.ui.resolve(e)
     const { branch, base } = git
     const columns = e.props.bodyColumns
     const sync = branch !== null && !git.isDetached ? syncStatus(git.upstream) : null
@@ -307,8 +320,15 @@ export const register: Register = on => {
             {base && <Text dimColor> → {shorten(base, Math.max(12, Math.floor(columns * 0.2)))}</Text>}
           </Text>
         )}
-        {request && <Text color={request.color}>{request.text}</Text>}
+        {request && (
+          <Link href={request.url}>
+            <Text color={request.color}>{request.text}</Text>
+          </Link>
+        )}
         {sync && <Text color={sync.color}>{sync.text}</Text>}
+        {canOpenRequest(git) && (
+          <Button key="new-pr" label="New PR" hotkey="p" onPress={() => void $.prompt.submit({ text: newRequestPrompt(git), asUser: true })} />
+        )}
         {needsRebase(git) && (
           <Button key="rebase" label="Rebase" hotkey="r" variant="primary" onPress={() => void $.prompt.submit({ text: rebasePrompt(git), asUser: true })} />
         )}

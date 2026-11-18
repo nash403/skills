@@ -52,6 +52,7 @@ test('a stacked branch behind its base offers a cascading rebase', async ($, on)
 
     expect((await ui.find({ type: 'Text', text: /app/ }))?.text).toBe('🌿 app')
     expect((await ui.find({ type: 'Text', text: /PR/ }))?.text).toBe('PR #12')
+    expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'https://gitlab.com/team/app/-/merge_requests/12' } })
     expect((await ui.find({ type: 'Text', text: /^↑$/ }))?.text).toBe('↑')
     expect(await ui.find({ type: 'Text', text: /behind/ })).toBeUndefined()
     expect(statuses.at(-1)).toBe('🌿 app  ⎇ feat/child → feat/parent  PR #12  ↑  ⚠ rebase')
@@ -83,19 +84,26 @@ test('a long branch name is cut in its middle', async ($, on) => {
   await ui.unmount()
 })
 
-test('a branch with no PR shows none', async ($, on) => {
+test('a branch with no PR offers to open one', async ($, on) => {
   const { 'glab mr view --output json': _, ...withoutRequest } = STACKED_BRANCH
-  stubEngine(on, withoutRequest, [])
+  const submitted: string[] = []
+  stubEngine(on, withoutRequest, submitted)
 
   await $.session.start({ cwd: '/work/app', surface: 'terminal', isInteractive: true })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
 
   expect(await ui.find({ type: 'Text', text: /PR/ })).toBeUndefined()
+  await ui.press({ key: 'new-pr' })
   await ui.unmount()
+
+  expect(submitted[0]).toContain('Open a PR for `feat/child` targeting `main`')
+  expect(submitted[0]).toContain('Draft its title and description from what this session set out to do')
+  expect(submitted[0]).toContain('show me the draft and ask me to confirm it with the target branch and the options')
+  expect(submitted[0]).toContain('give me its web link')
 })
 
-test('the main branch in sync shows no rebase button', async ($, on) => {
+test('the main branch in sync shows no rebase or new PR button', async ($, on) => {
   stubEngine(on, MAIN_UP_TO_DATE, [])
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
@@ -105,6 +113,7 @@ test('the main branch in sync shows no rebase button', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /app/ }))?.text).toBe('📁 app')
   expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.text).toBe('✓')
   expect(await ui.find({ key: 'rebase' })).toBeUndefined()
+  expect(await ui.find({ key: 'new-pr' })).toBeUndefined()
   await ui.unmount()
 })
 
