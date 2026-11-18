@@ -61,8 +61,9 @@ test('a stacked branch behind its base offers a cascading rebase', async ($, on)
   }
 
   expect(submitted.length).toBe(2)
-  expect(submitted[0]).toContain('Rebase `feat/child` onto the latest `feat/parent`')
+  expect(submitted[0]).toContain('Bring `feat/child` up to date with the latest `feat/parent`')
   expect(submitted[0]).toContain('cascade down the stack to `main`')
+  expect(submitted[0]).toContain('Rebase by default, but merge `feat/parent` into it')
 })
 
 test('a long branch name is cut in its middle', async ($, on) => {

@@ -161,11 +161,15 @@ async function readSnapshot($: EngineInterface, depth: Depth, previous: GitSnaps
 
 function rebasePrompt(git: GitSnapshot) {
   const { branch, base, defaultBranch } = git
-  const lines = [`Rebase \`${branch}\` onto the latest \`${base}\` (fetch first).`]
+  const lines = [
+    `Bring \`${branch}\` up to date with the latest \`${base}\` (fetch first).`,
+    `Rebase by default, but merge \`${base}\` into it when that is simpler: others pushed to the branch, a rebase would replay the same conflict commit after commit, the branch already holds merges from its base, or its PR is squashed on merge.`,
+    'Tell me which one you picked and why before doing it.',
+  ]
 
   if (base !== defaultBranch) {
     lines.push(
-      `\`${base}\` is not the main branch (\`${defaultBranch}\`): before that, ask me whether to rebase \`${base}\` onto the latest of its own base too. If I agree, cascade down the stack to \`${defaultBranch}\` and rebase each branch onto the one below it, bottom first.`,
+      `\`${base}\` is not the main branch (\`${defaultBranch}\`): before that, ask me whether to bring \`${base}\` up to date with its own base too, the same way. If I agree, cascade down the stack to \`${defaultBranch}\`, bottom first.`,
     )
   }
 
