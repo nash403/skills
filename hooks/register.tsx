@@ -4,22 +4,28 @@
 // session lifecycle events are hooked here, once, and handed to each mod.
 import type { Register } from 'claude-code'
 
+import { catchUpBabysitPrAfterTurn, register as babysitPr, startBabysitPr } from './babysit-pr/register'
 import { refreshGitBandAfterTurn, register as gitBand, startGitBand } from './git-band/register'
 
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+
     startGitBand($)
+    await startBabysitPr($)
 
     return started
   })
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+
     refreshGitBandAfterTurn($)
+    catchUpBabysitPrAfterTurn($, e)
 
     return result
   })
 
   gitBand(on, options)
+  babysitPr(on, options)
 }
