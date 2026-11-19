@@ -97,15 +97,15 @@ export const register: Register = on => {
     return { text: opened.isPlaced ? 'PR pane opened.' : `The PR pane could not open: ${opened.reason}.` }
   })
 
-  on('classic.PostToolUse', { tool_name: 'Bash' }, async ($, e, next) => {
-    const result = await next(e)
-    const { command } = (e.tool_input ?? {}) as { command?: unknown }
+  // tool.call, not classic.PostToolUse: a managed module above the plugins can send a classic event on past them.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const ran = await next(e)
 
-    if (typeof command === 'string') {
-      inBackground($, 'refresh after a command', afterCommand($, command, bashOutput(e.tool_response)))
+    if (ran.deny === undefined && ran.isError !== true) {
+      inBackground($, 'refresh after a command', afterCommand($, e.command, bashOutput(ran.result)))
     }
 
-    return result
+    return ran
   })
 
   // Both served ahead of the permission check: they only write to the pane, so asking each time would be noise.

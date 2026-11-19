@@ -398,16 +398,11 @@ test('a PR added by hand is a number of the current repo or a URL', async ($, on
 test('nothing reads the session or calls gh or glab before /babysit-pr runs once', async ($, on) => {
   const clock = mock.clock(on)
   const { calls, sessionReads, tools } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }])
-  on('classic.PostToolUse', () => ({}))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'https://github.com/acme/app/pull/40\n', stderr: '' } }))
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
   await $.turn.complete({ ...TURN, reason: 'answer' })
-  await $.classic.PostToolUse({
-    tool_name: 'Bash',
-    tool_input: { command: 'gh pr create --fill' },
-    tool_response: { stdout: 'https://github.com/acme/app/pull/40\n' },
-    tool_use_id: 't1',
-  })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
   await clock.advance(3 * 60_000)
 
   // The git band runs git and gh pr view on its own; the PR pane's own calls are its API reads and its branch lookup.
@@ -425,7 +420,7 @@ test('nothing reads the session or calls gh or glab before /babysit-pr runs once
 test('a gh command adds the PR it prints, and a subagent turn scans nothing', async ($, on) => {
   const clock = mock.clock(on)
   const { calls } = stubEngine(on, [])
-  on('classic.PostToolUse', () => ({}))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'https://github.com/acme/app/pull/40\n', stderr: '' } }))
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
   await $.command.run(OPEN_COMMAND)
@@ -436,12 +431,7 @@ test('a gh command adds the PR it prints, and a subagent turn scans nothing', as
   await clock.settle()
   expect(calls.filter(({ argv }) => argv[0] !== 'git')).toHaveLength(0)
 
-  await $.classic.PostToolUse({
-    tool_name: 'Bash',
-    tool_input: { command: 'gh pr create --fill' },
-    tool_response: { stdout: 'https://github.com/acme/app/pull/40\n' },
-    tool_use_id: 't1',
-  })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
   await clock.settle()
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
