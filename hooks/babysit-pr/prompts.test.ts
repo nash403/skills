@@ -13,6 +13,7 @@ function thread(id: string, url: string): PrThread {
 const PR: PrSnapshot = {
   url: 'https://github.com/acme/app/pull/12',
   title: 'Save rows',
+  description: '',
   state: 'open',
   isDraft: false,
   isApproved: false,

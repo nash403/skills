@@ -71,6 +71,7 @@ export type ReviewPoint = { at: string; headSha: string | null }
 export type PrSnapshot = {
   url: string
   title: string
+  description: string
   state: PrState
   isDraft: boolean
   isApproved: boolean
@@ -139,6 +140,10 @@ export type PrTriage = Record<string, ThreadTriage>
 // One PR's draft replies, the text by thread id.
 export type ReplyDrafts = Record<string, string>
 
+// What a PR does, in three sentences at most: written by the model from its title and description, or the
+// description's first sentences until then. `source` is a hash of what it was written from.
+export type PrSummary = { source: string; text: string; by: 'model' | 'description' }
+
 declare module 'claude-code' {
   interface PluginState {
     'nash403-skills': {
@@ -157,6 +162,8 @@ declare module 'claude-code' {
       babysitReplyDrafts: Shaped<Record<string, ReplyDrafts>>
       // By PR key.
       babysitWatches: Shaped<Record<string, PrWatch>>
+      // By PR key.
+      babysitSummaries: Shaped<Record<string, PrSummary>>
     }
   }
 }

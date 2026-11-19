@@ -4,9 +4,10 @@ import type { EngineInterface, SessionMessage } from 'claude-code'
 import type { FollowedPr, PrRef, PrSnapshot } from '../../types'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
+import { summarize } from './summarized'
 import { clearChanges, forgetPr, markShown, recordRead } from './watched'
 
-const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-6' })
+const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-7' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })
@@ -126,6 +127,7 @@ async function refetch($: EngineInterface, refs: readonly PrRef[]) {
         const { snapshot } = fetched
         await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, snapshot, error: null } : pr)))
         await recordRead($, ref, previous, snapshot, { isOnScreen: onScreen === key })
+        void summarize($, ref, snapshot).catch(error => $.ui.log(`babysit-pr: summary of ${key} failed: ${String(error)}`, { to: 'debug' }))
       } finally {
         fetching.delete(key)
       }

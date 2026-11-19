@@ -8,7 +8,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      title url state isDraft
+      title body url state isDraft
       author { login }
       headRefName headRefOid baseRefName
       additions deletions changedFiles
@@ -53,6 +53,7 @@ type CheckContext =
 
 type GithubPr = {
   title: string
+  body: string | null
   url: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
   isDraft: boolean
@@ -205,6 +206,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
   return {
     url: pr.url,
     title: pr.title,
+    description: pr.body ?? '',
     state,
     isDraft: pr.isDraft,
     isApproved: isApproved(pr),

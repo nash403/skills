@@ -7,6 +7,7 @@ import { changeText, changesToast, detectChanges, mergeChanges } from './changes
 const PR: PrSnapshot = {
   url: 'https://github.com/acme/app/pull/7',
   title: 'Tidy the tools',
+  description: '',
   state: 'open',
   isDraft: false,
   isApproved: false,

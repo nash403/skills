@@ -9,6 +9,7 @@ const ANSWER = {
       pullRequest: {
         number: 12,
         title: 'Add the export [skip ci]',
+        body: 'Exports the rows. Adds a button.',
         url: 'https://github.com/acme/app/pull/12',
         state: 'OPEN',
         isDraft: false,
@@ -96,6 +97,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
   expect(pr).toEqual({
     url: 'https://github.com/acme/app/pull/12',
     title: 'Add the export [skip ci]',
+    description: 'Exports the rows. Adds a button.',
     state: 'open',
     isDraft: false,
     isApproved: false,

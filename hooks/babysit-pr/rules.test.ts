@@ -15,6 +15,7 @@ import {
 const OPEN_PR: PrSnapshot = {
   url: 'https://github.com/acme/app/pull/12',
   title: 'Add the export',
+  description: '',
   state: 'open',
   isDraft: false,
   isApproved: false,

@@ -90,7 +90,7 @@ export const register: Register = on => {
   on('command.run', { command: 'babysit-pr' }, async $ => {
     await optIn($)
     await registerPaneTools($)
-    const opened = await $.ui.open({ id: PANE_ID, title: 'PRs' })
+    const opened = await $.ui.open({ id: PANE_ID, title: 'PR Babysitting' })
     await markPrOnScreenShown($)
     inBackground($, 'catch-up', catchUp($))
 

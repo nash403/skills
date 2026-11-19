@@ -1,18 +1,20 @@
-import type { Color, EngineInterface, RenderInput } from 'claude-code'
+import type { EngineInterface, RenderInput } from 'claude-code'
 
-import type { CiState, FollowedPr, PrChange, PrRef, PrSnapshot, PrThread, PrTriage, PrWatch, ReplyDrafts, TriageImportance } from '../../types'
+import type { FollowedPr, PrChange, PrRef, PrSnapshot, PrSummary, PrThread, PrTriage, PrWatch, ReplyDrafts } from '../../types'
 import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveThread, unapprove } from './actions'
 import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
+import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, displayName, initials, isBot } from './look'
+import type { Tone } from './look'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
 import { prKey, prLabel } from './refs'
 import { headToReviewFrom, viewerApproval } from './pushes'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
-import type { StatusChip } from './rules'
 import { feedbackTally, triageStatus } from './triage'
 import type { FeedbackTally, TriageStatus } from './triage'
+import { readPrSummary } from './summarized'
 import { readPrTriage } from './triaged'
 import { concerningThreads, excerpt, isViewerPr, isViewerTurn, nextSteps } from './turns'
 import type { ConcerningThread } from './turns'
@@ -30,31 +32,40 @@ type Watches = Record<string, PrWatch>
 // Whether a triaged thread shows its longer summary, by thread id.
 const detailsOpenFamily = { plugin: 'nash403-skills', key: 'isBabysitTriageOpen' } as const
 
-const CHIP_COLORS: Record<StatusChip, Color> = {
-  merged: 'merged',
-  closed: 'inactive',
-  approved: 'success',
-  'approved + threads': 'success',
-  updated: 'suggestion',
-  reviewed: 'warning',
-  resolved: 'success',
-  opened: 'subtle',
+// A filled chip: its own background, so it reads on a light or a dark theme alike.
+function chip($: EngineInterface, e: PaneInput, text: string, tone: Tone, key?: string) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return (
+    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={1}>
+      <Text color={tone.fg} bold>
+        {text}
+      </Text>
+    </Box>
+  )
 }
 
-const IMPORTANCE_COLORS: Record<TriageImportance, Color> = { high: 'error', medium: 'warning', low: 'inactive' }
+// Initials on the person's own color, a gear for a bot.
+function avatar($: EngineInterface, e: PaneInput, name: string) {
+  return chip($, e, isBot(name) ? '⚙' : initials(name), isBot(name) ? TONES.slate : avatarTone(name), `avatar:${name}`)
+}
 
-const CI_TEXTS: Record<Exclude<CiState, 'none'>, { text: string; color: Color }> = {
-  starting: { text: 'CI starting', color: 'warning' },
-  pending: { text: 'CI pending', color: 'warning' },
-  ok: { text: 'CI ok', color: 'success' },
-  error: { text: 'CI error', color: 'error' },
+function person($: EngineInterface, e: PaneInput, name: string, isViewer: boolean) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return (
+    <Box key={`person:${name}`} flexDirection="row" columnGap={1}>
+      {avatar($, e, name)}
+      <Text bold={isViewer}>{isViewer ? 'you' : displayName(name)}</Text>
+    </Box>
+  )
 }
 
 function unseenDot($: EngineInterface, e: PaneInput) {
   const { Text } = $.ui.resolve(e)
 
   return (
-    <Text bold color="suggestion">
+    <Text bold color={TONES.fuchsia.bg}>
       •
     </Text>
   )
@@ -81,7 +92,7 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
       {hasMany && <Button key="previous" label="‹" plain onPress={() => void select($, previous.ref)} />}
       {hasMany && (
         <Box flexDirection="row" columnGap={1}>
-          <Text dimColor>
+          <Text dimColor tabular>
             {index + 1}/{prs.length}
           </Text>
           {isAnotherUnseen && unseenDot($, e)}
@@ -91,33 +102,113 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
       {isUnseen(shown) && unseenDot($, e)}
       {url ? (
         <Link href={url}>
-          <Text bold>{prLabel(shown.ref)} ↗</Text>
+          <Text underline>{prLabel(shown.ref)} ↗</Text>
         </Link>
       ) : (
-        <Text bold>{prLabel(shown.ref)}</Text>
+        <Text>{prLabel(shown.ref)}</Text>
       )}
       <Box flexGrow={1} />
       <Button key="refresh" label="↻" plain dimColor onPress={() => void refreshPr($, shown.ref)} />
-      <Button key="remove" label="✕" plain dimColor onPress={() => void unfollow($, shown.ref)} />
+      <Button key="remove" label="Unfollow" plain dimColor onPress={() => void unfollow($, shown.ref)} />
     </Box>
   )
 }
 
-function stateLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+// Past the query's cap, the count reads `100+`.
+function commitsLabel({ commits, hasMoreCommits }: PrSnapshot) {
+  if (commits.length === 1) {
+    return '1 commit'
+  }
+
+  return `${commits.length}${hasMoreCommits ? '+' : ''} commits`
+}
+
+// The PR's vital signs: its CI and flags as chips, then the size of the diff and the threads.
+function vitals($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
-  const chip = statusChip(pr)
-  const ci = pr.ci === 'none' ? null : CI_TEXTS[pr.ci]
+  const ci = pr.state === 'open' && pr.ci !== 'none' ? CI_LOOKS[pr.ci] : null
+  const { open, total } = threadCounts(pr)
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-      <Text color={CHIP_COLORS[chip]} inverse bold>
-        {` ${chip} `}
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={1}>
+      {ci && chip($, e, ci.text, ci.tone)}
+      {isPushedSinceApproval(pr) && chip($, e, '⚠ pushed since your approval', TONES.saffron)}
+      {pr.isDraft && chip($, e, 'draft', TONES.slate)}
+      {pr.blocked && chip($, e, `blocked: ${pr.blocked}`, TONES.signal)}
+      {isSkipCi(pr.title, pr.headMessage) && chip($, e, 'skip CI', TONES.saffron)}
+      <Box flexDirection="row" columnGap={1}>
+        <Text color="diffAdded" tabular>
+          +{pr.additions}
+        </Text>
+        <Text color="diffRemoved" tabular>
+          −{pr.deletions}
+        </Text>
+      </Box>
+      <Text dimColor>{pr.changedFiles === 1 ? '1 file' : `${pr.changedFiles} files`}</Text>
+      <Text dimColor>{commitsLabel(pr)}</Text>
+      <Text dimColor>
+        threads {open}/{total}
+        {pr.hasMoreThreads ? '+' : ''} open
       </Text>
-      {isPushedSinceApproval(pr) && <Text color="warning">⚠ pushed since your approval</Text>}
-      {pr.state === 'open' && ci && <Text color={ci.color}>{ci.text}</Text>}
-      {pr.isDraft && <Text color="inactive">draft</Text>}
-      {pr.blocked && <Text color="error">blocked: {pr.blocked}</Text>}
-      {isSkipCi(pr.title, pr.headMessage) && <Text color="warning">skip CI</Text>}
+    </Box>
+  )
+}
+
+// The PR at a glance, framed in its status color: status and title, branches and author, what it does, its vitals.
+function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSummary | undefined) {
+  const { Box, Text } = $.ui.resolve(e)
+  const status = statusChip(pr)
+  const look = STATUS_LOOKS[status]
+
+  return (
+    <Box flexDirection="column" rowGap={1} borderStyle="round" borderColor={look.tone.bg} paddingX={1}>
+      <Box flexDirection="column">
+        <Box flexDirection="row" columnGap={1} alignItems="flex-start">
+          {chip($, e, `${look.glyph} ${status}`, look.tone, 'status')}
+          <Box flexShrink={1}>
+            <Text size="heading" weight="bold" wrap="wrap">
+              {pr.title}
+            </Text>
+          </Box>
+        </Box>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {person($, e, pr.author, pr.author === pr.viewer)}
+          <Text dimColor wrap="truncate-middle">
+            {pr.headBranch} → {pr.baseBranch}
+          </Text>
+        </Box>
+      </Box>
+      {summary && summary.text !== '' && <Text wrap="wrap">{summary.text}</Text>}
+      {vitals($, e, pr)}
+    </Box>
+  )
+}
+
+// Who moves next. The user's move is the loudest thing in the pane; everyone else's reads quietly.
+function nextStepLines($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const { Box, Text } = $.ui.resolve(e)
+  const steps = nextSteps(pr)
+
+  if (steps.length === 0) {
+    return null
+  }
+
+  return (
+    <Box flexDirection="column">
+      {steps.map(({ actor, action }) =>
+        actor === 'You' ? (
+          <Box key={`${actor}: ${action}`} flexDirection="row" columnGap={1}>
+            {chip($, e, 'your move', TONES.fuchsia, `move:${action}`)}
+            <Text bold>{action}</Text>
+          </Box>
+        ) : (
+          <Box key={`${actor}: ${action}`}>
+            <Text dimColor>
+              ◷ {actor}: {action}
+            </Text>
+          </Box>
+        ),
+      )}
     </Box>
   )
 }
@@ -205,62 +296,14 @@ function changesBlock($: EngineInterface, e: PaneInput, view: ThreadsView, chang
   }
 
   return (
-    <Box flexDirection="column">
-      <Text bold color="suggestion">
+    <Box flexDirection="column" borderStyle="round" borderColor={TONES.cobalt.bg} paddingX={1}>
+      <Text bold color={TONES.cobalt.bg}>
         Changes since your last visit
       </Text>
       {changes.map(change => (
-        <Box key={changeKey(change)} flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
+        <Box key={changeKey(change)} flexDirection="row" flexWrap="wrap" columnGap={2}>
           <Text>{changeText(change)}</Text>
           {changeAnswer($, e, view, change)}
-        </Box>
-      ))}
-    </Box>
-  )
-}
-
-// Past the query's cap, the count reads `100+`.
-function commitsLabel({ commits, hasMoreCommits }: PrSnapshot) {
-  if (commits.length === 1) {
-    return '1 commit'
-  }
-
-  return `${commits.length}${hasMoreCommits ? '+' : ''} commits`
-}
-
-function countsLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
-  const { Box, Text } = $.ui.resolve(e)
-  const { open, total } = threadCounts(pr)
-
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-      <Text color="diffAdded">+{pr.additions}</Text>
-      <Text color="diffRemoved">−{pr.deletions}</Text>
-      <Text dimColor>{pr.changedFiles === 1 ? '1 file' : `${pr.changedFiles} files`}</Text>
-      <Text dimColor>{commitsLabel(pr)}</Text>
-      <Text dimColor>
-        threads {open}/{total}
-        {pr.hasMoreThreads ? '+' : ''} open
-      </Text>
-    </Box>
-  )
-}
-
-function nextStepLines($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
-  const { Box, Text } = $.ui.resolve(e)
-  const steps = nextSteps(pr)
-
-  if (steps.length === 0) {
-    return null
-  }
-
-  return (
-    <Box flexDirection="column">
-      {steps.map(({ actor, action }) => (
-        <Box key={`${actor}: ${action}`}>
-          <Text bold={actor === 'You'} color={actor === 'You' ? 'suggestion' : 'subtle'}>
-            → {actor}: {action}
-          </Text>
         </Box>
       ))}
     </Box>
@@ -288,15 +331,15 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
   const isOpen = details === 'open'
 
   return (
-    <Box flexDirection="column" paddingLeft={2}>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        <Text bold color="suggestion">
+    <Box flexDirection="column">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+        <Text bold color={TONES.cobalt.bg}>
           {name}
         </Text>
         <Text>{classification}</Text>
-        <Text color={IMPORTANCE_COLORS[importance]}>{importance}</Text>
-        <Text color={isHandled ? 'success' : 'warning'}>{isHandled ? '✓ handled' : 'not handled'}</Text>
-        {status.kind === 'changed' && <Text color="warning">new comment since triage</Text>}
+        {chip($, e, importance, IMPORTANCE_TONES[importance], `importance:${threadId}`)}
+        <Text color={isHandled ? TONES.moss.bg : TONES.saffron.bg}>{isHandled ? '✓ handled' : 'not handled'}</Text>
+        {status.kind === 'changed' && <Text color={TONES.saffron.bg}>new comment since triage</Text>}
       </Box>
       <Box flexDirection="row" columnGap={1}>
         <Text wrap="wrap">{summary}</Text>
@@ -317,8 +360,8 @@ function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body
   const threadId = target.thread.id
 
   return (
-    <Box flexDirection="column" paddingLeft={2}>
-      <Text bold color="suggestion">
+    <Box flexDirection="column" borderStyle="round" borderColor={TONES.fuchsia.bg} paddingX={1}>
+      <Text bold color={TONES.fuchsia.bg}>
         Draft reply
       </Text>
       <Text wrap="wrap">{body}</Text>
@@ -330,6 +373,12 @@ function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body
   )
 }
 
+function turnMark($: EngineInterface, e: PaneInput, threadId: string, isMine: boolean) {
+  const { Text } = $.ui.resolve(e)
+
+  return isMine ? chip($, e, 'your turn', TONES.fuchsia, `turn:${threadId}`) : <Text dimColor>◷ waiting</Text>
+}
+
 function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread, firstComment, turn }: ConcerningThread) {
   const { Box, Button, Link, Text } = $.ui.resolve(e)
   const status = triageStatus(thread, view.triage)
@@ -338,34 +387,31 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
   const draft = view.drafts[thread.id]
 
   return (
-    <Box key={thread.id} flexDirection="column">
+    <Box key={thread.id} flexDirection="column" rowGap={1}>
       <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-        <Text bold>{firstComment.author}</Text>
-        <Text color={isViewerTurn(turn) ? 'suggestion' : 'inactive'}>{isViewerTurn(turn) ? 'your turn' : 'waiting'}</Text>
+        {person($, e, firstComment.author, firstComment.author === view.pr.viewer)}
+        {turnMark($, e, thread.id, isViewerTurn(turn))}
         <Link href={firstComment.url}>
-          <Text dimColor>↗</Text>
+          <Text dimColor underline>
+            open ↗
+          </Text>
         </Link>
-        <Button
-          key={`explain:${thread.id}`}
-          label="Explain"
-          plain
-          dimColor
-          onPress={() => submitPrompt($, explainPrompt(target))}
-        />
+        <Box flexGrow={1} />
+        <Button key={`explain:${thread.id}`} label="Explain" plain dimColor onPress={() => submitPrompt($, explainPrompt(target))} />
         {isViewerPr(view.pr) && <Button key={`fix:${thread.id}`} label="Fix" plain dimColor onPress={() => void askFix($, target)} />}
         <Button key={`reply:${thread.id}`} label="Reply" plain dimColor onPress={() => void askReply($, target)} />
         <Button key={`resolve:${thread.id}`} label="Resolve" plain dimColor onPress={() => void resolveThread($, target)} />
       </Box>
-      {status.kind === 'not-triaged' ? (
-        <Box paddingLeft={2}>
+      <Box flexDirection="column" paddingLeft={2}>
+        {status.kind === 'not-triaged' ? (
           <Text dimColor wrap="wrap">
             {excerpt(firstComment.body)}
           </Text>
-        </Box>
-      ) : (
-        triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
-      )}
-      {draft !== undefined && draftLines($, e, target, draft)}
+        ) : (
+          triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
+        )}
+        {draft !== undefined && draftLines($, e, target, draft)}
+      </Box>
     </Box>
   )
 }
@@ -390,44 +436,41 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   const { toTriage } = tally
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" rowGap={1}>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        <Text bold>Your open threads ({concerning.length})</Text>
-        <Text color={tally.handled === tally.total ? 'success' : 'subtle'}>{feedbackText(tally)}</Text>
-        {toTriage.length > 0 && (
-          <Fragment>
-            <Text color="warning" inverse>
-              {` ${toTriage.length} to triage `}
-            </Text>
-            <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />
-          </Fragment>
-        )}
+        <Text weight="bold" size="heading">
+          Your open threads ({concerning.length})
+        </Text>
+        <Text color={tally.handled === tally.total ? TONES.moss.bg : undefined} dimColor={tally.handled !== tally.total}>
+          {feedbackText(tally)}
+        </Text>
+        {toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, 'to-triage')}
+        {toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />}
       </Box>
       {concerning.map(item => threadRow($, e, view, item))}
     </Box>
   )
 }
 
-function participantRows($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+// Everyone on the PR as a token: avatar, name, then a check when they approved and a diamond when they have commits.
+function people($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
-  const people = participants(pr)
-  const width = Math.max(...people.map(person => person.name.length))
 
   return (
-    <Box flexDirection="column">
-      {people.map(person => (
-        <Box key={person.name} flexDirection="row" columnGap={2}>
-          <Text bold={person.name === pr.viewer}>{person.name.padEnd(width)}</Text>
-          <Text dimColor>{person.role.padEnd(8)}</Text>
-          {person.hasApproved && <Text color="success">✓ approved</Text>}
-          {person.hasCommits && <Text dimColor>has commits</Text>}
+    <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
+      {participants(pr).map(participant => (
+        <Box key={`participant:${participant.name}`} flexDirection="row" columnGap={1}>
+          {person($, e, participant.name, participant.name === pr.viewer)}
+          {participant.role === 'author' && <Text dimColor>author</Text>}
+          {participant.hasApproved && <Text color={TONES.moss.bg}>✓ approved</Text>}
+          {participant.hasCommits && participant.role !== 'author' && <Text dimColor>◆ commits</Text>}
         </Box>
       ))}
     </Box>
   )
 }
 
-function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null, changes: readonly PrChange[]) {
+function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null, changes: readonly PrChange[], summary: PrSummary | undefined) {
   const { Box, Text } = $.ui.resolve(e)
   const pr = followed.snapshot
 
@@ -435,22 +478,11 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: Th
     <Box flexDirection="column" rowGap={1}>
       {view && changesBlock($, e, view, changes)}
       {pr === null && followed.error === null && <Text dimColor>Loading…</Text>}
-      {followed.error !== null && <Text color="error">Could not read it: {followed.error}</Text>}
-      {pr && (
-        <Box flexDirection="column">
-          <Text bold wrap="wrap">
-            {pr.title}
-          </Text>
-          <Text dimColor>
-            {pr.headBranch} → {pr.baseBranch}
-          </Text>
-        </Box>
-      )}
-      {pr && stateLine($, e, pr)}
+      {followed.error !== null && <Text color={TONES.signal.bg}>Could not read it: {followed.error}</Text>}
+      {pr && prCard($, e, pr, summary)}
       {pr && nextStepLines($, e, pr)}
       {pr && peerActions($, e, followed.ref, pr)}
-      {pr && countsLine($, e, pr)}
-      {pr && participantRows($, e, pr)}
+      {pr && people($, e, pr)}
       {view && threadList($, e, view)}
     </Box>
   )
@@ -459,7 +491,7 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: Th
 // A minimized pane on the desktop app: one line, and clicks may not reach it.
 function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefined, watches: Watches) {
   const { Text } = $.ui.resolve(e)
-  const dot = Object.values(watches).some(hasUnseenChanges) ? <Text color="suggestion">• </Text> : null
+  const dot = Object.values(watches).some(hasUnseenChanges) ? <Text color={TONES.fuchsia.bg}>• </Text> : null
 
   if (!followed?.snapshot) {
     return (
@@ -470,12 +502,12 @@ function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefin
     )
   }
 
-  const chip = statusChip(followed.snapshot)
+  const status = statusChip(followed.snapshot)
 
   return (
     <Text>
       {dot}
-      {prLabel(followed.ref)} <Text color={CHIP_COLORS[chip]}>{chip}</Text>
+      {prLabel(followed.ref)} <Text color={STATUS_LOOKS[status].tone.bg}>{status}</Text>
     </Text>
   )
 }
@@ -501,11 +533,12 @@ export async function drawPane($: EngineInterface, e: PaneInput) {
 
   const view = shown?.snapshot ? await readThreadsView($, shown.ref, shown.snapshot) : null
   const changes = shown ? (watches[prKey(shown.ref)]?.changes ?? []) : []
+  const summary = shown ? await readPrSummary($, shown.ref) : undefined
 
   return (
     <Box flexDirection="column" rowGap={1} width="100%">
       {shown ? switcher($, e, prs, selectedIndex, watches) : <Text dimColor>No PR yet. The PRs and MRs this session opens or mentions show up here.</Text>}
-      {shown && prView($, e, shown, view, changes)}
+      {shown && prView($, e, shown, view, changes, summary)}
       <Input key="add" placeholder="Add a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />
     </Box>
   )

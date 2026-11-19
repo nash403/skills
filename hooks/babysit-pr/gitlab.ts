@@ -7,7 +7,7 @@ export const GITLAB_MR_QUERY = `query($project: ID!, $iid: String!) {
   currentUser { username }
   project(fullPath: $project) {
     mergeRequest(iid: $iid) {
-      title webUrl state draft
+      title description webUrl state draft
       author { username }
       diffHeadSha sourceBranch targetBranch
       detailedMergeStatus
@@ -38,6 +38,7 @@ type Pipeline = { status: string; jobs: { nodes: { status: string; allowFailure:
 
 type GitlabMr = {
   title: string
+  description: string | null
   webUrl: string
   state: 'opened' | 'closed' | 'merged' | 'locked'
   draft: boolean
@@ -169,6 +170,7 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
   return {
     url: mr.webUrl,
     title: mr.title,
+    description: mr.description ?? '',
     state,
     isDraft: mr.draft,
     isApproved: mr.approved && approvers.length > 0,

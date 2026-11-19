@@ -11,6 +11,7 @@ const ANSWER = {
       mergeRequest: {
         iid: '345',
         title: 'Add the export',
+        description: 'Exports the rows. Adds a button.',
         webUrl: 'https://gitlab.com/team/app/-/merge_requests/345',
         state: 'opened',
         draft: true,
@@ -92,6 +93,7 @@ test('a GitLab answer reads as a PR snapshot', () => {
   expect(parseGitlabMr(ANSWER)).toEqual({
     url: 'https://gitlab.com/team/app/-/merge_requests/345',
     title: 'Add the export',
+    description: 'Exports the rows. Adds a button.',
     state: 'open',
     isDraft: true,
     isApproved: true,
