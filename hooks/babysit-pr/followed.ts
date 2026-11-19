@@ -10,6 +10,8 @@ const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } a
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })
 const scannedMessage = atom({ plugin: 'nash403-skills', key: 'babysitScannedMessage' } as const, null)
+// The plugin loads in every session: nothing reads the session or calls gh or glab until /babysit-pr has run once.
+const isOptedIn = atom({ plugin: 'nash403-skills', key: 'isBabysitPrOptedIn' } as const, false)
 
 const MESSAGES_PER_SCAN = 4096
 
@@ -19,6 +21,14 @@ export async function readFollowedPrs($: EngineInterface) {
   const selected = await read($, selectedPr)
 
   return { prs, selectedIndex: Math.max(0, prs.findIndex(pr => prKey(pr.ref) === selected)) }
+}
+
+export async function optIn($: EngineInterface) {
+  await update($, isOptedIn, () => true)
+}
+
+export async function hasOptedIn($: EngineInterface) {
+  return read($, isOptedIn)
 }
 
 const fetching = new Set<string>()

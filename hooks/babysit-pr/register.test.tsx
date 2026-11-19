@@ -113,13 +113,18 @@ const GITLAB_APPROVALS = { approved_by: [{ user: { username: 'ana' }, approved_a
 function stubEngine(on: any, messages: unknown[], answers: Record<number, unknown> = {}) {
   const calls: Calls = []
   const toasts: string[] = []
+  const sessionReads: string[] = []
   let openPanes: { id: string }[] = []
 
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('turn.complete', (_: unknown, e: { answer: string }) => ({ text: e.answer }))
   on('ui.status', () => ({ value: undefined }))
   on('session.cwd', () => ({ value: '/work/app' }))
-  on('session.messages', () => ({ value: messages }))
+  on('session.messages', () => {
+    sessionReads.push('messages')
+
+    return { value: messages }
+  })
   on('command.register', () => ({ value: { command: 'babysit-pr' } }))
   on('ui.open', (_: unknown, e: { id: string }) => {
     openPanes = [{ id: e.id }]
@@ -141,7 +146,7 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
     return { value: { exitCode: 0, stdout: typeof answer === 'string' ? answer : JSON.stringify(answer), stderr: '' } }
   })
 
-  return { calls, toasts, closePane: () => (openPanes = []) }
+  return { calls, toasts, sessionReads, closePane: () => (openPanes = []) }
 }
 
 function answerTo(argv: string[], answers: Record<number, unknown>): unknown {
@@ -271,12 +276,41 @@ test('a PR added by hand is a number of the current repo or a URL', async ($, on
   }
 })
 
+test('nothing reads the session or calls gh or glab before /babysit-pr runs once', async ($, on) => {
+  const clock = mock.clock(on)
+  const { calls, sessionReads } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }])
+  on('classic.PostToolUse', () => ({}))
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.turn.complete({ ...TURN, reason: 'answer' })
+  await $.classic.PostToolUse({
+    tool_name: 'Bash',
+    tool_input: { command: 'gh pr create --fill' },
+    tool_response: { stdout: 'https://github.com/acme/app/pull/40\n' },
+    tool_use_id: 't1',
+  })
+  await clock.advance(3 * 60_000)
+
+  // The git band runs git and gh pr view on its own; the PR pane's own calls are its API reads and its branch lookup.
+  expect(sessionReads).toEqual([])
+  expect(platformCalls(calls)).toEqual([])
+  expect(calls.filter(({ argv }) => argv.join(' ') === 'gh pr view --json url')).toEqual([])
+
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  expect(platformCalls(calls)).toEqual(['number=12', 'number=7'])
+})
+
 test('a gh command adds the PR it prints, and a subagent turn scans nothing', async ($, on) => {
   const clock = mock.clock(on)
   const { calls } = stubEngine(on, [])
   on('classic.PostToolUse', () => ({}))
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  calls.length = 0
+
   await $.turn.complete({ ...TURN, reason: 'answer', agentId: 'a1' })
   await clock.settle()
   expect(calls.filter(({ argv }) => argv[0] !== 'git')).toHaveLength(0)
@@ -290,6 +324,7 @@ test('a gh command adds the PR it prints, and a subagent turn scans nothing', as
   await clock.settle()
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'previous' })
   expect((await ui.find({ type: 'Text', text: /^acme\/app#/ }))?.text).toBe('acme/app#40 ↗')
   await ui.unmount()
 })

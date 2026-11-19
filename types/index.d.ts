@@ -94,6 +94,7 @@ declare module 'claude-code' {
       babysitRemovedPrs: Shaped<string[]>
       babysitSelectedPr: string | null
       babysitScannedMessage: string | null
+      isBabysitPrOptedIn: boolean
     }
   }
 }

@@ -1,6 +1,6 @@
 import type { EngineInterface, Register, TurnCompleteInput } from 'claude-code'
 
-import { followCommandPrs, followSessionPrs, refreshOpenPrs } from './followed'
+import { followCommandPrs, followSessionPrs, hasOptedIn, optIn, refreshOpenPrs } from './followed'
 import { drawPane } from './pane'
 
 const PANE_ID = 'babysit-pr'
@@ -21,15 +21,21 @@ async function catchUp($: EngineInterface) {
   await refreshOpenPrs($)
 }
 
+async function afterTurn($: EngineInterface) {
+  if (await hasOptedIn($)) {
+    await catchUp($)
+  }
+}
+
 // Polls only while the pane is open.
 async function poll($: EngineInterface) {
-  if (await isPaneOpen($)) {
+  if ((await hasOptedIn($)) && (await isPaneOpen($))) {
     await refreshOpenPrs($)
   }
 }
 
 async function afterCommand($: EngineInterface, command: string, output: string) {
-  if (!PLATFORM_COMMAND.test(command)) {
+  if (!PLATFORM_COMMAND.test(command) || !(await hasOptedIn($))) {
     return
   }
 
@@ -52,12 +58,13 @@ export async function startBabysitPr($: EngineInterface) {
 // Subagent turns don't refresh: the main turn that waits on them does.
 export function catchUpBabysitPrAfterTurn($: EngineInterface, e: TurnCompleteInput) {
   if (e.agentId === undefined) {
-    inBackground($, 'catch-up', catchUp($))
+    inBackground($, 'catch-up', afterTurn($))
   }
 }
 
 export const register: Register = on => {
   on('command.run', { command: 'babysit-pr' }, async $ => {
+    await optIn($)
     const opened = await $.ui.open({ id: PANE_ID, title: 'PRs' })
     inBackground($, 'catch-up', catchUp($))
 
