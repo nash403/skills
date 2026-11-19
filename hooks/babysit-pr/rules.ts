@@ -45,14 +45,13 @@ type GithubMergeFacts = {
 }
 
 // GitHub's BLOCKED gives no reason, so it is inferred from the review decision, the checks, then the threads.
-// BEHIND (the branch must be brought up to date) has no word of its own and reads as plain `blocked`.
 export function githubBlockedReason({ mergeStateStatus, reviewDecision, ci, openThreads }: GithubMergeFacts): BlockedReason | null {
   if (mergeStateStatus === 'DIRTY') {
     return 'conflicts'
   }
 
   if (mergeStateStatus === 'BEHIND') {
-    return 'blocked'
+    return 'rebase'
   }
 
   if (mergeStateStatus !== 'BLOCKED') {
@@ -63,7 +62,7 @@ export function githubBlockedReason({ mergeStateStatus, reviewDecision, ci, open
     return 'approvals'
   }
 
-  if (ci !== 'ok') {
+  if (ci === 'error' || ci === 'starting' || ci === 'pending') {
     return 'checks'
   }
 
@@ -78,7 +77,7 @@ const GITLAB_BLOCKED_REASONS: Record<string, BlockedReason | null> = {
   DRAFT_STATUS: null,
   NOT_OPEN: null,
   CONFLICT: 'conflicts',
-  NEED_REBASE: 'conflicts',
+  NEED_REBASE: 'rebase',
   NOT_APPROVED: 'approvals',
   REQUESTED_CHANGES: 'approvals',
   DISCUSSIONS_NOT_RESOLVED: 'threads',

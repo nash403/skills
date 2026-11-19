@@ -5,7 +5,7 @@ import type { FollowedPr, PrRef } from '../../types'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, prKey, uniquePrs } from './refs'
 
-const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-1' })
+const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-2' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })

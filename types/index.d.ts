@@ -36,7 +36,7 @@ export type PrState = 'open' | 'merged' | 'closed'
 
 export type CiState = 'none' | 'starting' | 'pending' | 'ok' | 'error'
 
-export type BlockedReason = 'conflicts' | 'approvals' | 'threads' | 'checks' | 'blocked'
+export type BlockedReason = 'conflicts' | 'rebase' | 'approvals' | 'threads' | 'checks' | 'blocked'
 
 export type PrComment = { author: string; createdAt: string; body: string; url: string }
 
@@ -75,6 +75,7 @@ export type PrSnapshot = {
   commits: PrCommit[]
   threads: PrThread[]
   hasMoreThreads: boolean
+  hasMoreCommits: boolean
 }
 
 export type FollowedPr = {

@@ -14,6 +14,7 @@ export const GITLAB_MR_QUERY = `query($project: ID!, $iid: String!) {
       approvedBy { nodes { username } }
       reviewers { nodes { username } }
       diffStatsSummary { additions deletions fileCount }
+      commitCount
       commits(first: 100) { nodes { sha committedDate message author { username } authorName } }
       headPipeline {
         status
@@ -48,6 +49,7 @@ type GitlabMr = {
   approvedBy: { nodes: { username: string }[] }
   reviewers: { nodes: { username: string }[] }
   diffStatsSummary: { additions: number; deletions: number; fileCount: number }
+  commitCount: number | null
   commits: { nodes: { sha: string; committedDate: string; message: string; author: Username; authorName: string }[] }
   headPipeline: Pipeline | null
   discussions: {
@@ -167,6 +169,7 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
         }
       }),
     hasMoreThreads: mr.discussions.pageInfo.hasNextPage,
+    hasMoreCommits: (mr.commitCount ?? 0) > mr.commits.nodes.length,
   }
 }
 

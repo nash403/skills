@@ -23,6 +23,7 @@ const ANSWER = {
         approvedBy: { nodes: [{ username: 'bob' }] },
         reviewers: { nodes: [{ username: 'cid', mergeRequestInteraction: { reviewState: 'UNREVIEWED', approved: false } }] },
         diffStatsSummary: { additions: 1482, deletions: 82, fileCount: 24 },
+        commitCount: 2,
         commits: {
           nodes: [
             { sha: 'c2', committedDate: '2026-11-12T10:00:00+01:00', message: 'Fix\n\n[ci skip]', author: null, authorName: 'Ana B' },
@@ -98,6 +99,7 @@ test('a GitLab answer reads as a PR snapshot', () => {
       },
     ],
     hasMoreThreads: false,
+    hasMoreCommits: false,
   })
 })
 
@@ -127,4 +129,11 @@ test('GitLab approval times come from the approvals endpoint', () => {
 
 test('a GitLab answer without the MR is refused', () => {
   expect(() => parseGitlabMr({ data: { currentUser: { username: 'bob' }, project: { mergeRequest: null } } })).toThrow()
+})
+
+test('a GitLab MR with more commits than the query reads says so', () => {
+  const answer = structuredClone(ANSWER)
+  answer.data.project.mergeRequest.commitCount = 101
+
+  expect(parseGitlabMr(answer)).toMatchObject({ hasMoreCommits: true })
 })

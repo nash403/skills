@@ -37,6 +37,7 @@ const OPEN_PR: PrSnapshot = {
   ],
   threads: [],
   hasMoreThreads: false,
+  hasMoreCommits: false,
 }
 
 function thread(id: string, isResolved: boolean, ...comments: [author: string, createdAt: string][]): PrThread {
@@ -71,10 +72,13 @@ test('GitHub says why a PR is blocked, first match wins', () => {
   expect(githubBlockedReason({ ...blocked, reviewDecision: 'REVIEW_REQUIRED', ci: 'error' })).toBe('approvals')
   expect(githubBlockedReason({ ...blocked, reviewDecision: 'CHANGES_REQUESTED' })).toBe('approvals')
   expect(githubBlockedReason({ ...blocked, ci: 'pending', openThreads: 2 })).toBe('checks')
-  expect(githubBlockedReason({ ...blocked, ci: 'none' })).toBe('checks')
+  expect(githubBlockedReason({ ...blocked, ci: 'error' })).toBe('checks')
+  expect(githubBlockedReason({ ...blocked, ci: 'starting' })).toBe('checks')
+  expect(githubBlockedReason({ ...blocked, ci: 'none', openThreads: 2 })).toBe('threads')
+  expect(githubBlockedReason({ ...blocked, ci: 'none' })).toBe('blocked')
   expect(githubBlockedReason({ ...blocked, openThreads: 2 })).toBe('threads')
   expect(githubBlockedReason(blocked)).toBe('blocked')
-  expect(githubBlockedReason({ ...blocked, mergeStateStatus: 'BEHIND' })).toBe('blocked')
+  expect(githubBlockedReason({ ...blocked, mergeStateStatus: 'BEHIND' })).toBe('rebase')
   expect(githubBlockedReason({ ...blocked, mergeStateStatus: 'CLEAN' })).toBeNull()
   expect(githubBlockedReason({ ...blocked, mergeStateStatus: 'UNKNOWN' })).toBeNull()
   expect(githubBlockedReason({ ...blocked, mergeStateStatus: 'UNSTABLE' })).toBeNull()
@@ -82,7 +86,7 @@ test('GitHub says why a PR is blocked, first match wins', () => {
 
 test('GitLab says why an MR is blocked in one word', () => {
   expect(gitlabBlockedReason('CONFLICT')).toBe('conflicts')
-  expect(gitlabBlockedReason('NEED_REBASE')).toBe('conflicts')
+  expect(gitlabBlockedReason('NEED_REBASE')).toBe('rebase')
   expect(gitlabBlockedReason('NOT_APPROVED')).toBe('approvals')
   expect(gitlabBlockedReason('REQUESTED_CHANGES')).toBe('approvals')
   expect(gitlabBlockedReason('DISCUSSIONS_NOT_RESOLVED')).toBe('threads')

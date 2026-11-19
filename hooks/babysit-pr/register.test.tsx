@@ -195,6 +195,7 @@ test('the PR of the branch and the PRs the session shows fill the pane, read onl
     expect((await ui.find({ type: 'Text', text: /^skip CI$/ }))?.text).toBe('skip CI')
     expect((await ui.find({ type: 'Text', text: /^\+/ }))?.text).toBe('+40')
     expect((await ui.find({ type: 'Text', text: /files/ }))?.text).toBe('2 files')
+    expect((await ui.find({ type: 'Text', text: /commits/ }))?.text).toBe('2 commits')
     expect((await ui.find({ type: 'Text', text: /^threads/ }))?.text).toBe('threads 1/2 open')
     expect((await ui.find({ type: 'Text', text: /^bob/ }))?.text).toBe('bob')
     expect((await ui.find({ type: 'Text', text: /approved$/ }))?.text).toBe('✓ approved')
@@ -336,4 +337,23 @@ test('an empty pane says where PRs come from', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /^No PR/ }))?.text).toContain('No PR yet.')
   expect(await ui.find({ key: 'add' })).toBeDefined()
   await ui.unmount()
+})
+
+test('a PR past the 100 commits the query reads says 100+', async ($, on) => {
+  const clock = mock.clock(on)
+  const commits = Array.from({ length: 100 }, (_, index) => ({
+    commit: { oid: `c${index}`, committedDate: '2026-11-10T08:00:00Z', authors: { nodes: [{ user: { login: 'ana' }, name: 'Ana' }] } },
+  }))
+  stubEngine(on, [], { 12: githubAnswer(12, { commits: { totalCount: 150, nodes: commits } }) })
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    expect((await ui.find({ type: 'Text', text: /commits/ }))?.text).toBe('100+ commits')
+    await ui.unmount()
+  }
 })

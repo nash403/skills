@@ -82,6 +82,15 @@ function stateLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
+// Past the query's cap, the count reads `100+`.
+function commitsLabel({ commits, hasMoreCommits }: PrSnapshot) {
+  if (commits.length === 1) {
+    return '1 commit'
+  }
+
+  return `${commits.length}${hasMoreCommits ? '+' : ''} commits`
+}
+
 function countsLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const { open, total } = threadCounts(pr)
@@ -91,6 +100,7 @@ function countsLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
       <Text color="diffAdded">+{pr.additions}</Text>
       <Text color="diffRemoved">−{pr.deletions}</Text>
       <Text dimColor>{pr.changedFiles === 1 ? '1 file' : `${pr.changedFiles} files`}</Text>
+      <Text dimColor>{commitsLabel(pr)}</Text>
       <Text dimColor>
         threads {open}/{total}
         {pr.hasMoreThreads ? '+' : ''} open

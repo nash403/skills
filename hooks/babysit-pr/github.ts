@@ -16,6 +16,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
       latestOpinionatedReviews(first: 20) { nodes { author { login } state submittedAt commit { oid } } }
       reviews(last: 50) { nodes { author { login } state submittedAt commit { oid } } }
       commits(last: 100) {
+        totalCount
         nodes { commit { oid committedDate authors(first: 5) { nodes { user { login } name } } } }
       }
       statusCheckRollup: commits(last: 1) {
@@ -64,6 +65,7 @@ type GithubPr = {
   latestOpinionatedReviews: { nodes: Review[] }
   reviews: { nodes: Review[] }
   commits: {
+    totalCount: number
     nodes: { commit: { oid: string; committedDate: string; authors: { nodes: { user: Login; name: string }[] } } }[]
   }
   statusCheckRollup: {
@@ -197,5 +199,6 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
     }),
     threads,
     hasMoreThreads: pr.reviewThreads.totalCount > threads.length,
+    hasMoreCommits: pr.commits.totalCount > pr.commits.nodes.length,
   }
 }

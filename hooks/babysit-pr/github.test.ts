@@ -128,6 +128,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
       { id: 'PRRT_2', isResolved: true, path: 'README.md', line: null, comments: [] },
     ],
     hasMoreThreads: true,
+    hasMoreCommits: false,
   })
 })
 
@@ -152,4 +153,11 @@ test('a GitHub PR with no review rule is approved once someone approves and nobo
 test('a GitHub answer without the PR is refused', () => {
   expect(() => parseGithubPr({ data: { viewer: { login: 'bob' }, repository: { pullRequest: null } } })).toThrow()
   expect(() => parseGithubPr({ errors: [{ message: 'Could not resolve to a Repository' }] })).toThrow()
+})
+
+test('a GitHub PR with more commits than the query reads says so', () => {
+  const answer = structuredClone(ANSWER)
+  answer.data.repository.pullRequest.commits.totalCount = 101
+
+  expect(parseGithubPr(answer)).toMatchObject({ hasMoreCommits: true })
 })
