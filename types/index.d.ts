@@ -144,6 +144,13 @@ export type ReplyDrafts = Record<string, string>
 // description's first sentences until then. `source` is a hash of what it was written from.
 export type PrSummary = { source: string; text: string; by: 'model' | 'description' }
 
+// Where a session's time went, from its first prompt to its last answer: the agent working, waiting on its
+// subagents, waiting on the person's answer to its question, and the rest.
+export type Slice = 'work' | 'agents' | 'you' | 'idle'
+
+// Epoch milliseconds; null before the first prompt and the first answer.
+export type SessionTime = { startedAt: number | null; endedAt: number | null; ms: Record<Slice, number> }
+
 declare module 'claude-code' {
   interface PluginState {
     'nash403-skills': {
@@ -164,6 +171,7 @@ declare module 'claude-code' {
       babysitWatches: Shaped<Record<string, PrWatch>>
       // By PR key.
       babysitSummaries: Shaped<Record<string, PrSummary>>
+      sessionTime: Shaped<SessionTime | null>
     }
   }
 }

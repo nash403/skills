@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Color, EngineInterface, Register, RenderSurface, ToolCallResult } from 'claude-code'
+import type { Color, EngineInterface, Register, RenderInput, RenderSurface, ToolCallResult } from 'claude-code'
 
 import type { ChangeRequest, Divergence, GitSnapshot } from '../../types'
 
@@ -328,85 +328,86 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => noteEdit($, await next(e), e.file_path))
   on('tool.call', { tool: 'Write' }, async ($, e, next) => noteEdit($, await next(e), e.file_path))
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => noteEdit($, await next(e), e.notebook_path))
+}
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const git = await read($, snapshot)
+// The band's row, or null before the first read.
+export async function drawGitBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
+  const git = await read($, snapshot)
 
-    if (e.props.hasSurvey || git === null) {
-      return next(e)
-    }
+  if (git === null) {
+    return null
+  }
 
-    const { Box, Button, Link, Text } = $.ui.resolve(e)
-    const { branch, base } = git
-    const columns = e.props.bodyColumns
-    const sync = branch !== null && !git.isDetached ? syncStatus(git.upstream) : null
-    const request = requestText(git.request)
-    const dirs = await read($, editedDirs)
-    const hasEditedElsewhere = dirs.some(dir => dir !== git.root)
-    const isListOpen = hasEditedElsewhere && (await read($, isDirListOpen))
-    const home = isListOpen ? await $.env.get('HOME') : undefined
+  const { Box, Button, Link, Text } = $.ui.resolve(e)
+  const { branch, base } = git
+  const columns = e.props.bodyColumns
+  const sync = branch !== null && !git.isDetached ? syncStatus(git.upstream) : null
+  const request = requestText(git.request)
+  const dirs = await read($, editedDirs)
+  const hasEditedElsewhere = dirs.some(dir => dir !== git.root)
+  const isListOpen = hasEditedElsewhere && (await read($, isDirListOpen))
+  const home = isListOpen ? await $.env.get('HOME') : undefined
 
-    return (
-      <Box flexDirection="column" width="100%">
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
-          <Button key="folder" plain dimColor onPress={press => void copyCwd($, press.surface)}>
-            {git.isLinkedWorktree ? '🌿' : '📁'} {git.folder}
-          </Button>
-          {hasEditedElsewhere && (
-            <Button
-              key="dirs"
-              label={`✏️ ${dirs.length}`}
-              plain
-              dimColor={!isListOpen}
-              onPress={() => void update($, isDirListOpen, isOpen => !isOpen)}
-            />
-          )}
-          {branch !== null && (
-            <Box flexDirection="row">
-              <Button key="branch" plain onPress={press => void copyText($, branch, press.surface)}>
-                <Text bold>⎇ {shorten(branch, Math.max(16, Math.floor(columns * 0.3)))}</Text>
-              </Button>
-              {git.isDetached && <Text dimColor> (detached)</Text>}
-              {base && <Text dimColor> → {shorten(base, Math.max(12, Math.floor(columns * 0.2)))}</Text>}
-            </Box>
-          )}
-          {request && (
-            <Link href={request.url}>
-              <Text color={request.color}>{request.text}</Text>
-            </Link>
-          )}
-          {sync && <Text color={sync.color}>{sync.text}</Text>}
-          {canOpenRequest(git) && (
-            <Button
-              key="new-pr"
-              label="New PR"
-              hotkey="p"
-              onPress={() => void $.prompt.submit({ text: newRequestPrompt(git), asUser: true })}
-            />
-          )}
-          {needsRebase(git) && (
-            <Button
-              key="rebase"
-              label="Rebase"
-              hotkey="r"
-              variant="primary"
-              onPress={() => void $.prompt.submit({ text: rebasePrompt(git), asUser: true })}
-            />
-          )}
-          <Box flexGrow={1} />
-          <Button key="refresh" label="↻" plain dimColor onPress={() => void refresh($, 'remote')} />
-        </Box>
-        {isListOpen && (
-          <Box flexDirection="column" paddingLeft={3}>
-            {dirs.map(dir => (
-              <Text dimColor={dir === git.root}>
-                {withTilde(dir, home)}
-                {dir === git.root ? ' (session)' : ''}
-              </Text>
-            ))}
+  return (
+    <Box flexDirection="column" width="100%">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
+        <Button key="folder" plain dimColor onPress={press => void copyCwd($, press.surface)}>
+          {git.isLinkedWorktree ? '🌿' : '📁'} {git.folder}
+        </Button>
+        {hasEditedElsewhere && (
+          <Button
+            key="dirs"
+            label={`✏️ ${dirs.length}`}
+            plain
+            dimColor={!isListOpen}
+            onPress={() => void update($, isDirListOpen, isOpen => !isOpen)}
+          />
+        )}
+        {branch !== null && (
+          <Box flexDirection="row">
+            <Button key="branch" plain onPress={press => void copyText($, branch, press.surface)}>
+              <Text bold>⎇ {shorten(branch, Math.max(16, Math.floor(columns * 0.3)))}</Text>
+            </Button>
+            {git.isDetached && <Text dimColor> (detached)</Text>}
+            {base && <Text dimColor> → {shorten(base, Math.max(12, Math.floor(columns * 0.2)))}</Text>}
           </Box>
         )}
+        {request && (
+          <Link href={request.url}>
+            <Text color={request.color}>{request.text}</Text>
+          </Link>
+        )}
+        {sync && <Text color={sync.color}>{sync.text}</Text>}
+        {canOpenRequest(git) && (
+          <Button
+            key="new-pr"
+            label="New PR"
+            hotkey="p"
+            onPress={() => void $.prompt.submit({ text: newRequestPrompt(git), asUser: true })}
+          />
+        )}
+        {needsRebase(git) && (
+          <Button
+            key="rebase"
+            label="Rebase"
+            hotkey="r"
+            variant="primary"
+            onPress={() => void $.prompt.submit({ text: rebasePrompt(git), asUser: true })}
+          />
+        )}
+        <Box flexGrow={1} />
+        <Button key="refresh" label="↻" plain dimColor onPress={() => void refresh($, 'remote')} />
       </Box>
-    )
-  })
+      {isListOpen && (
+        <Box flexDirection="column" paddingLeft={3}>
+          {dirs.map(dir => (
+            <Text dimColor={dir === git.root}>
+              {withTilde(dir, home)}
+              {dir === git.root ? ' (session)' : ''}
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  )
 }

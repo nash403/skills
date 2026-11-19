@@ -1,5 +1,5 @@
 {
-  "description": "Check the PR or MR description before a push, and nudge a ticket status sync after pushes, merges, PRs and MRs; draw the git band above the prompt",
+  "description": "Check the PR or MR description before a push, and nudge a ticket status sync after pushes, merges, PRs and MRs; draw the git band and the session time gauge above the prompt",
   "hooks": {
     "PreToolUse": [
       {
