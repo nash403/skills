@@ -1,13 +1,16 @@
 import type { EngineInterface, Register, TurnCompleteInput } from 'claude-code'
 
+import { saveReplyDraft } from './drafted'
+import { REPLY_DRAFT_TOOL_SPEC } from './drafts'
 import { followCommandPrs, followSessionPrs, hasOptedIn, optIn, refreshOpenPrs } from './followed'
 import { drawPane } from './pane'
 import { TRIAGE_TOOL_SPEC } from './triage'
 import { saveTriage } from './triaged'
 
 const PANE_ID = 'babysit-pr'
-// triage.ts's TRIAGE_TOOL, spelled out: validate reads an imported matcher value as `?`.
+// triage.ts's TRIAGE_TOOL and drafts.ts's REPLY_DRAFT_TOOL, spelled out: validate reads an imported matcher value as `?`.
 const TRIAGE_TOOL = 'mcp__nash403-skills__babysit_pr_triage'
+const REPLY_DRAFT_TOOL = 'mcp__nash403-skills__babysit_pr_draft_reply'
 const POLL_EVERY_MS = 3 * 60_000
 const PLATFORM_COMMAND = /\b(gh|glab)\s|\bgit\s(?:[^;&|\n]*\s)?push\b/
 
@@ -20,10 +23,11 @@ function inBackground($: EngineInterface, task: string, work: Promise<void>) {
   work.catch(error => $.ui.log(`babysit-pr: ${task} failed: ${String(error)}`, { to: 'debug' }))
 }
 
-function triageToolFailed($: EngineInterface, error: unknown) {
-  $.ui.log(`babysit-pr: the triage tool failed: ${String(error)}`, { to: 'debug' })
+// `what` is what the tool records: the triage, the draft reply.
+function paneToolFailed($: EngineInterface, what: string, error: unknown) {
+  $.ui.log(`babysit-pr: recording ${what} failed: ${String(error)}`, { to: 'debug' })
 
-  return { deny: 'The /babysit-pr pane could not record the triage.' }
+  return { deny: `The /babysit-pr pane could not record ${what}.` }
 }
 
 async function catchUp($: EngineInterface) {
@@ -60,16 +64,17 @@ function bashOutput(response: unknown) {
   return [stdout, stderr].filter(stream => typeof stream === 'string').join('\n')
 }
 
-// Only once /babysit-pr has run: the tool's schema sits in every prompt of the session.
-async function registerTriageTool($: EngineInterface) {
+// Only once /babysit-pr has run: the tools' schemas sit in every prompt of the session.
+async function registerPaneTools($: EngineInterface) {
   await $.tool.register(TRIAGE_TOOL_SPEC)
+  await $.tool.register(REPLY_DRAFT_TOOL_SPEC)
 }
 
 export async function startBabysitPr($: EngineInterface) {
   await $.command.register({ name: 'babysit-pr', description: 'Follow the PRs and MRs of this session in a pane' })
 
   if (await hasOptedIn($)) {
-    await registerTriageTool($)
+    await registerPaneTools($)
   }
 
   $.clock.every(POLL_EVERY_MS, () => inBackground($, 'poll', poll($)))
@@ -85,7 +90,7 @@ export function catchUpBabysitPrAfterTurn($: EngineInterface, e: TurnCompleteInp
 export const register: Register = on => {
   on('command.run', { command: 'babysit-pr' }, async $ => {
     await optIn($)
-    await registerTriageTool($)
+    await registerPaneTools($)
     const opened = await $.ui.open({ id: PANE_ID, title: 'PRs' })
     inBackground($, 'catch-up', catchUp($))
 
@@ -103,8 +108,9 @@ export const register: Register = on => {
     return result
   })
 
-  // Served ahead of the permission check: it only writes to the pane, so asking each time would be noise.
-  on('tool.call', { tool: TRIAGE_TOOL }, async ($, e) => saveTriage($, e)).catch(($, _, next) => triageToolFailed($, next.error))
+  // Both served ahead of the permission check: they only write to the pane, so asking each time would be noise.
+  on('tool.call', { tool: TRIAGE_TOOL }, async ($, e) => saveTriage($, e)).catch(($, _, next) => paneToolFailed($, 'the triage', next.error))
+  on('tool.call', { tool: REPLY_DRAFT_TOOL }, async ($, e) => saveReplyDraft($, e)).catch(($, _, next) => paneToolFailed($, 'the draft reply', next.error))
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => drawPane($, e))
 }

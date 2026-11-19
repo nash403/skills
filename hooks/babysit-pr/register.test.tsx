@@ -25,7 +25,14 @@ const OPEN_COMMAND = {
 
 const TURN = { answer: 'Done.', durationMs: 1, isAborted: false, turnId: 'turn-1' }
 
-type Calls = { argv: string[] }[]
+type Calls = { argv: string[]; stdin?: string }[]
+
+type ProcessAnswer = { exitCode: number; stdout: string; stderr: string }
+
+// A write call: a GraphQL mutation, or a REST call with a method of its own.
+function isWrite(argv: readonly string[]) {
+  return argv.includes('-X') || argv.includes('--input') || argv.some(arg => arg.startsWith('query=mutation'))
+}
 
 function githubAnswer(number: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -116,6 +123,8 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
   const sessionReads: string[] = []
   const tools: string[] = []
   const prompts: string[] = []
+  const writes: Calls = []
+  const write = { answer: { exitCode: 0, stdout: '{"data":{}}', stderr: '' } as ProcessAnswer }
   let openPanes: { id: string }[] = []
 
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
@@ -149,16 +158,22 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
 
     return { text: e.text }
   })
-  on('process.run', (_: unknown, e: { argv: readonly string[] }) => {
+  on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
     const argv = [...e.argv]
     calls.push({ argv })
+
+    if (isWrite(argv)) {
+      writes.push({ argv, stdin: e.init?.stdin })
+
+      return { value: write.answer }
+    }
 
     const answer = answerTo(argv, answers)
 
     return { value: { exitCode: 0, stdout: typeof answer === 'string' ? answer : JSON.stringify(answer), stderr: '' } }
   })
 
-  return { calls, toasts, sessionReads, tools, prompts, closePane: () => (openPanes = []) }
+  return { calls, toasts, sessionReads, tools, prompts, writes, write, closePane: () => (openPanes = []) }
 }
 
 function answerTo(argv: string[], answers: Record<number, unknown>): unknown {
@@ -312,7 +327,7 @@ test('nothing reads the session or calls gh or glab before /babysit-pr runs once
   await $.command.run(OPEN_COMMAND)
   await clock.settle()
   expect(platformCalls(calls)).toEqual(['number=12', 'number=7'])
-  expect(tools).toEqual(['babysit_pr_triage'])
+  expect(tools).toEqual(['babysit_pr_triage', 'babysit_pr_draft_reply'])
 })
 
 test('a gh command adds the PR it prints, and a subagent turn scans nothing', async ($, on) => {
@@ -490,6 +505,7 @@ const MINE_TRIAGE = {
   isHandled: true,
   summary: 'Cid wants the helper renamed to exportRows.',
   details: 'The helper name says rows but it exports a page. Already renamed in c2.',
+  lastCommentUrl: 'https://github.com/acme/app/pull/12#discussion_mine_0',
 }
 
 async function openOnTriagedPr($: any, on: any, answers: Record<number, unknown> = { 12: TRIAGED_PR }) {
@@ -541,7 +557,10 @@ test('every thread triaged and handled shows all feedback handled, with nothing 
   await $.tool.call({
     tool: TRIAGE_TOOL,
     pr: 'https://github.com/acme/app/pull/12',
-    threads: [MINE_TRIAGE, { ...MINE_TRIAGE, threadId: 'waiting', name: 'skip-empty-rows' }],
+    threads: [
+      MINE_TRIAGE,
+      { ...MINE_TRIAGE, threadId: 'waiting', name: 'skip-empty-rows', lastCommentUrl: 'https://github.com/acme/app/pull/12#discussion_waiting_1' },
+    ],
   })
 
   for (const surface of SURFACES) {
@@ -617,4 +636,208 @@ test('a triage call that is malformed or names a PR the pane does not follow is 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe(' 2 to triage ')
   await ui.unmount()
+})
+
+const DRAFT_TOOL = 'mcp__nash403-skills__babysit_pr_draft_reply'
+const PR_12 = 'https://github.com/acme/app/pull/12'
+const DRAFT = 'Renamed in c2. `$(whoami)` stays text.'
+
+function notesOf(session: ReturnType<typeof mock.session>) {
+  return session.appended().map(row => row.message.content.map(block => (block.type === 'text' ? block.text : '')).join(''))
+}
+
+function readCalls(calls: Calls) {
+  return platformCalls(calls.filter(({ argv }) => !isWrite(argv)))
+}
+
+test('Reply asks the agent for a draft, which shows under its thread, and asking again replaces it', async ($, on) => {
+  const session = mock.session(on)
+  const { prompts, writes } = await openOnTriagedPr($, on)
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    prompts.length = 0
+
+    await ui.press({ key: 'reply:mine' })
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain('Draft a reply to this review thread on my PR acme/app#12')
+    expect(notesOf(session).at(-1)).toBe('From the /babysit-pr pane, the user asked you to draft a reply to review thread mine on acme/app#12.')
+    expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
+
+    const answer = await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
+    expect(answer).toMatchObject({ result: 'The draft reply is under thread mine in the /babysit-pr pane. The user posts or discards it from there.' })
+    expect((await ui.find({ key: 'mine' }))?.text).toContain(`Draft reply${DRAFT}`)
+    expect(await ui.find({ key: 'post:mine' })).toBeDefined()
+    expect(await ui.find({ key: 'post:waiting' })).toBeUndefined()
+
+    await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: 'Renamed to exportRows in c2.' })
+    expect((await ui.find({ key: 'mine' }))?.text).toContain('Renamed to exportRows in c2.')
+    expect((await ui.find({ key: 'mine' }))?.text).not.toContain(DRAFT)
+
+    await ui.press({ key: 'discard:mine' })
+    await ui.unmount()
+  }
+
+  expect(writes).toEqual([])
+})
+
+test('Post sends the draft as a reply in its thread, then clears it, notes it and reads the PR again', async ($, on) => {
+  const session = mock.session(on)
+  const { calls, writes } = await openOnTriagedPr($, on)
+
+  for (const surface of SURFACES) {
+    await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    calls.length = 0
+    writes.length = 0
+
+    await ui.press({ key: 'post:mine' })
+    expect(writes.map(({ argv }) => argv)).toEqual([['gh', 'api', 'graphql', '--hostname', 'github.com', '--input', '-']])
+    expect(JSON.parse(writes[0]?.stdin ?? '')).toMatchObject({ variables: { id: 'mine', body: DRAFT } })
+    expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
+    expect((await ui.find({ key: 'mine' }))?.text).not.toContain('Draft reply')
+    expect(notesOf(session).at(-1)).toBe(
+      `The user posted your draft reply in review thread mine on acme/app#12 from the /babysit-pr pane. Don't post it again. It reads:\n\n${DRAFT}`,
+    )
+    expect(readCalls(calls)).toEqual(['number=12'])
+    await ui.unmount()
+  }
+})
+
+test("a failed Post shows the platform's reason and keeps the draft, with no note and no refresh", async ($, on) => {
+  const session = mock.session(on)
+  const { calls, toasts, write } = await openOnTriagedPr($, on)
+  write.answer = {
+    exitCode: 1,
+    stdout: '{"errors":[{"message":"Resource not accessible by integration"}]}',
+    stderr: 'gh: Resource not accessible by integration',
+  }
+
+  for (const surface of SURFACES) {
+    await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    const notesBefore = notesOf(session).length
+    calls.length = 0
+
+    await ui.press({ key: 'post:mine' })
+    expect(toasts.at(-1)).toBe('Could not post the reply: Resource not accessible by integration')
+    expect((await ui.find({ key: 'mine' }))?.text).toContain(`Draft reply${DRAFT}`)
+    expect(await ui.find({ key: 'post:mine' })).toBeDefined()
+    expect(notesOf(session)).toHaveLength(notesBefore)
+    expect(readCalls(calls)).toEqual([])
+
+    await ui.press({ key: 'discard:mine' })
+    await ui.unmount()
+  }
+})
+
+test('Discard clears the draft and tells the agent not to post it', async ($, on) => {
+  const session = mock.session(on)
+  const { writes } = await openOnTriagedPr($, on)
+  await $.tool.call({ tool: TRIAGE_TOOL, pr: PR_12, threads: [MINE_TRIAGE] })
+
+  for (const surface of SURFACES) {
+    await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    await ui.press({ key: 'discard:mine' })
+    expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
+    expect((await ui.find({ key: 'mine' }))?.text).not.toContain(DRAFT)
+    expect(notesOf(session).at(-1)).toBe(
+      "The user discarded your draft reply to review thread rename-export-rows (mine) on acme/app#12 in the /babysit-pr pane. Don't post it.",
+    )
+    await ui.unmount()
+  }
+
+  expect(writes).toEqual([])
+})
+
+test('Resolve resolves the thread on the platform, drops its draft, notes it and reads the PR again; a failure says why', async ($, on) => {
+  const session = mock.session(on)
+  const { calls, toasts, write, writes } = await openOnTriagedPr($, on)
+  await $.tool.call({ tool: TRIAGE_TOOL, pr: PR_12, threads: [MINE_TRIAGE] })
+
+  for (const surface of SURFACES) {
+    await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    const notesBefore = notesOf(session).length
+    calls.length = 0
+    writes.length = 0
+
+    write.answer = { exitCode: 1, stdout: '', stderr: 'gh: Could not resolve to a node with the global id of mine\n' }
+    await ui.press({ key: 'resolve:mine' })
+    expect(toasts.at(-1)).toBe('Could not resolve the thread: gh: Could not resolve to a node with the global id of mine')
+    expect(notesOf(session)).toHaveLength(notesBefore)
+    expect(readCalls(calls)).toEqual([])
+    expect(await ui.find({ key: 'post:mine' })).toBeDefined()
+
+    write.answer = { exitCode: 0, stdout: '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}', stderr: '' }
+    await ui.press({ key: 'resolve:mine' })
+    expect(writes.map(({ argv }) => argv.join(' '))).toEqual([
+      "gh api graphql --hostname github.com -f query=mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } } -f id=mine",
+      "gh api graphql --hostname github.com -f query=mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } } -f id=mine",
+    ])
+    expect(notesOf(session).at(-1)).toBe('The user resolved review thread rename-export-rows (mine) on acme/app#12 from the /babysit-pr pane.')
+    expect(readCalls(calls)).toEqual(['number=12'])
+    expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('Fix shows on my PR only, asks to fix the thread on its branch without committing, and notes it', async ($, on) => {
+  const session = mock.session(on)
+  const clock = mock.clock(on)
+  const { prompts } = stubEngine(on, [{ role: 'user', text: 'Review https://github.com/acme/app/pull/7', toolUses: [] }], {
+    12: TRIAGED_PR,
+    7: githubAnswer(7, {
+      author: { login: 'dee' },
+      reviewThreads: {
+        totalCount: 1,
+        nodes: [
+          reviewThread('theirs', false, [
+            ['ana', '2026-11-11T10:00:00Z', 'Why this?'],
+            ['dee', '2026-11-11T11:00:00Z', 'Because.'],
+          ]),
+        ],
+      },
+    }),
+  })
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    prompts.length = 0
+
+    await ui.press({ key: 'fix:mine' })
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain('Fix what this review thread raises on my PR acme/app#12')
+    expect(prompts[0]).toContain("Work on the PR's branch, `feat/export`.")
+    expect(prompts[0]).toContain("Don't commit")
+    expect(notesOf(session).at(-1)).toBe('From the /babysit-pr pane, the user asked you to fix review thread mine on acme/app#12.')
+
+    await ui.press({ key: 'next' })
+    expect((await ui.find({ type: 'Text', text: /^acme\/app#/ }))?.text).toBe('acme/app#7 ↗')
+    expect(await ui.find({ key: 'fix:theirs' })).toBeUndefined()
+    expect(await ui.find({ key: 'reply:theirs' })).toBeDefined()
+    expect(await ui.find({ key: 'resolve:theirs' })).toBeDefined()
+    await ui.press({ key: 'previous' })
+    await ui.unmount()
+  }
+})
+
+test('a draft for a thread the pane does not list, or a PR it does not follow, is refused', async ($, on) => {
+  const { calls } = await openOnTriagedPr($, on)
+  calls.length = 0
+
+  const malformed = await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: ' ' })
+  const unknownThread = await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'PRRT_9', body: DRAFT })
+  const unfollowed = await $.tool.call({ tool: DRAFT_TOOL, pr: 'https://github.com/acme/app/pull/99', threadId: 'mine', body: DRAFT })
+
+  expect(malformed).toMatchObject({ deny: '`body` must be the text of the reply, at most 5000 characters.' })
+  expect(unknownThread).toMatchObject({ deny: 'PRRT_9 is not one of the open threads the /babysit-pr pane lists on acme/app#12.' })
+  expect(unfollowed).toMatchObject({ deny: 'https://github.com/acme/app/pull/99 is not a PR the /babysit-pr pane follows, or it has not loaded yet.' })
+  expect(calls).toEqual([])
 })

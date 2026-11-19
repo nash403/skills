@@ -1,6 +1,6 @@
 import type { PrSnapshot, PrThread, PrTriage, ThreadTriage, TriageImportance } from '../../types'
 
-export type TriageEntry = Omit<ThreadTriage, 'lastCommentUrl'> & { threadId: string }
+export type TriageEntry = ThreadTriage & { threadId: string }
 
 export type TriageStatus = { kind: 'not-triaged' } | { kind: 'triaged' | 'changed'; triage: ThreadTriage }
 
@@ -10,15 +10,26 @@ const MAX_NAME_LENGTH = 40
 const MAX_CLASSIFICATION_LENGTH = 60
 const MAX_SUMMARY_LENGTH = 200
 const MAX_DETAILS_LENGTH = 2000
+const MAX_URL_LENGTH = 2048
+
+export const THREAD_ID_PROPERTY = {
+  type: 'string',
+  description: 'The platform id of the thread, as the pane gave it: PRRT_... on GitHub, gid://gitlab/Discussion/... on GitLab.',
+}
 
 const THREAD_PROPERTIES = {
-  threadId: { type: 'string', description: 'The platform id of the thread, as the pane gave it: PRRT_... on GitHub, gid://gitlab/Discussion/... on GitLab.' },
+  threadId: THREAD_ID_PROPERTY,
   name: { type: 'string', pattern: KEBAB_CASE.source, maxLength: MAX_NAME_LENGTH, description: 'A short kebab-case id, two or three words that sum the thread up, such as null-check-save.' },
   classification: { type: 'string', maxLength: MAX_CLASSIFICATION_LENGTH, description: 'Whether it holds up and what it calls for, in plain words: "Valid, change needed", "Wrong, missing context", "Already fixed", "Question", "Nitpick"...' },
   importance: { type: 'string', enum: IMPORTANCES },
   isHandled: { type: 'boolean', description: 'True when the point needs nothing more from anyone: fixed in the code, answered, or not worth acting on.' },
   summary: { type: 'string', maxLength: MAX_SUMMARY_LENGTH, description: 'One line: what the thread asks and where it stands.' },
   details: { type: 'string', maxLength: MAX_DETAILS_LENGTH, description: 'A few sentences: what you checked in the code and what it shows, and the fix when one is needed.' },
+  lastCommentUrl: {
+    type: 'string',
+    maxLength: MAX_URL_LENGTH,
+    description: "The URL of the newest comment you read in the thread, leaving out GitLab's system notes. A later comment puts the thread back to triage. GitLab's REST API gives no note URL: write the MR URL, then #note_ and the note's id.",
+  },
 }
 
 export const TRIAGE_TOOL_SPEC = {
@@ -86,6 +97,10 @@ function entryErrors(entry: Record<string, unknown>, at: string) {
     errors.push(`\`${at}.details\` must be a text of at most ${MAX_DETAILS_LENGTH} characters.`)
   }
 
+  if (!isLine(entry.lastCommentUrl, MAX_URL_LENGTH)) {
+    errors.push(`\`${at}.lastCommentUrl\` must be the URL of the newest comment you read in the thread.`)
+  }
+
   return errors
 }
 
@@ -103,8 +118,8 @@ function duplicateErrors(entries: readonly TriageEntry[]) {
   })
 }
 
-function toEntry({ threadId, name, classification, importance, isHandled, summary, details }: Record<string, unknown>): TriageEntry {
-  return { threadId, name, classification, importance, isHandled, summary, details } as TriageEntry
+function toEntry({ threadId, name, classification, importance, isHandled, summary, details, lastCommentUrl }: Record<string, unknown>): TriageEntry {
+  return { threadId, name, classification, importance, isHandled, summary, details, lastCommentUrl } as TriageEntry
 }
 
 // The triage tool's arguments, checked field by field so the model can fix every mistake in one more call.
@@ -134,7 +149,7 @@ export function parseTriageInput(input: unknown): { prUrl: string; entries: Tria
   return duplicates.length > 0 ? { errors: duplicates } : { prUrl, entries }
 }
 
-function lastCommentUrl(thread: PrThread) {
+function newestCommentUrl(thread: PrThread) {
   return thread.comments.at(-1)?.url ?? ''
 }
 
@@ -145,11 +160,7 @@ export function recordTriage(
   entries: readonly TriageEntry[],
 ): { triage: PrTriage; skipped: string[] } | { errors: string[] } {
   const threads = new Map(pr.threads.map(thread => [thread.id, thread]))
-  const newTriages = entries.flatMap(({ threadId, ...fields }): [string, ThreadTriage][] => {
-    const thread = threads.get(threadId)
-
-    return thread ? [[threadId, { ...fields, lastCommentUrl: lastCommentUrl(thread) }]] : []
-  })
+  const newTriages = entries.flatMap(({ threadId, ...threadTriage }): [string, ThreadTriage][] => (threads.has(threadId) ? [[threadId, threadTriage]] : []))
   const retriagedIds = new Set(newTriages.map(([threadId]) => threadId))
   const otherTriages = Object.entries(triage).filter(([threadId]) => !retriagedIds.has(threadId))
   const errors = newTriages.flatMap(([, { name }]) => {
@@ -168,6 +179,7 @@ export function recordTriage(
   }
 }
 
+// A triage covers the newest comment the model read, which may be newer than the pane's snapshot until its next refresh.
 export function triageStatus(thread: PrThread, triage: PrTriage): TriageStatus {
   const recorded = triage[thread.id]
 
@@ -175,7 +187,7 @@ export function triageStatus(thread: PrThread, triage: PrTriage): TriageStatus {
     return { kind: 'not-triaged' }
   }
 
-  return { kind: recorded.lastCommentUrl === lastCommentUrl(thread) ? 'triaged' : 'changed', triage: recorded }
+  return { kind: recorded.lastCommentUrl === newestCommentUrl(thread) ? 'triaged' : 'changed', triage: recorded }
 }
 
 // Threads to triage: never triaged, or with a comment after their triage. Their handled mark is unknown.

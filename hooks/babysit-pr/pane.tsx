@@ -1,21 +1,24 @@
 import type { Color, EngineInterface, RenderInput } from 'claude-code'
 
-import type { CiState, FollowedPr, PrRef, PrSnapshot, PrThread, PrTriage, TriageImportance } from '../../types'
+import type { CiState, FollowedPr, PrRef, PrSnapshot, PrThread, PrTriage, ReplyDrafts, TriageImportance } from '../../types'
+import { askFix, askReply, discardDraft, postDraft, resolveThread } from './actions'
+import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
 import { explainPrompt, triagePrompt } from './prompts'
+import type { ThreadTarget } from './prompts'
 import { prLabel } from './refs'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import type { StatusChip } from './rules'
 import { feedbackTally, triageStatus } from './triage'
 import type { FeedbackTally, TriageStatus } from './triage'
 import { readPrTriage } from './triaged'
-import { concerningThreads, excerpt, isViewerTurn, nextSteps } from './turns'
+import { concerningThreads, excerpt, isViewerPr, isViewerTurn, nextSteps } from './turns'
 import type { ConcerningThread } from './turns'
 
 type PaneInput = RenderInput<'Pane'>
 
 // State the thread list needs, read ahead since helpers that draw are sync.
-type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; openDetails: ReadonlySet<string> }
+type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; drafts: ReplyDrafts; openDetails: ReadonlySet<string> }
 
 type TriagedStatus = Exclude<TriageStatus, { kind: 'not-triaged' }>
 
@@ -190,14 +193,35 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
   )
 }
 
+// `body` is passed to Post and Discard so they act on the draft drawn, not on one the model wrote since.
+function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body: string) {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const threadId = target.thread.id
+
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      <Text bold color="suggestion">
+        Draft reply
+      </Text>
+      <Text wrap="wrap">{body}</Text>
+      <Box flexDirection="row" columnGap={2}>
+        <Button key={`post:${threadId}`} label="Post" variant="primary" onPress={() => void postDraft($, target, body)} />
+        <Button key={`discard:${threadId}`} label="Discard" plain dimColor onPress={() => void discardDraft($, target, body)} />
+      </Box>
+    </Box>
+  )
+}
+
 function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread, firstComment, turn }: ConcerningThread) {
   const { Box, Button, Link, Text } = $.ui.resolve(e)
   const status = triageStatus(thread, view.triage)
   const name = status.kind === 'not-triaged' ? null : status.triage.name
+  const target: ThreadTarget = { ref: view.ref, pr: view.pr, thread, name }
+  const draft = view.drafts[thread.id]
 
   return (
     <Box key={thread.id} flexDirection="column">
-      <Box flexDirection="row" columnGap={1}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
         <Text bold>{firstComment.author}</Text>
         <Text color={isViewerTurn(turn) ? 'suggestion' : 'inactive'}>{isViewerTurn(turn) ? 'your turn' : 'waiting'}</Text>
         <Link href={firstComment.url}>
@@ -208,8 +232,11 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
           label="Explain"
           plain
           dimColor
-          onPress={() => submitPrompt($, explainPrompt(view.ref, view.pr, thread, name))}
+          onPress={() => submitPrompt($, explainPrompt(target))}
         />
+        {isViewerPr(view.pr) && <Button key={`fix:${thread.id}`} label="Fix" plain dimColor onPress={() => void askFix($, target)} />}
+        <Button key={`reply:${thread.id}`} label="Reply" plain dimColor onPress={() => void askReply($, target)} />
+        <Button key={`resolve:${thread.id}`} label="Resolve" plain dimColor onPress={() => void resolveThread($, target)} />
       </Box>
       {status.kind === 'not-triaged' ? (
         <Box paddingLeft={2}>
@@ -220,6 +247,7 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
       ) : (
         triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
       )}
+      {draft !== undefined && draftLines($, e, target, draft)}
     </Box>
   )
 }
@@ -327,10 +355,11 @@ function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefin
 
 async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot): Promise<ThreadsView> {
   const triage = await readPrTriage($, ref)
+  const drafts = await readPrDrafts($, ref)
   // Only a triaged thread has a longer summary to open.
   const openDetails = await readOpenDetails($, pr.threads.filter(thread => !thread.isResolved && thread.id in triage))
 
-  return { ref, pr, triage, openDetails }
+  return { ref, pr, triage, drafts, openDetails }
 }
 
 export async function drawPane($: EngineInterface, e: PaneInput) {

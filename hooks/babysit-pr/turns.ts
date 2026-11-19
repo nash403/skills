@@ -34,7 +34,7 @@ export function isViewerTurn(turn: ThreadTurn) {
   return turn !== 'theirs'
 }
 
-function isViewerPr(pr: PrSnapshot) {
+export function isViewerPr(pr: PrSnapshot) {
   return pr.author === pr.viewer
 }
 

@@ -21,6 +21,16 @@ export function prLabel(ref: PrRef) {
   return `${ref.project}${ref.platform === 'github' ? '#' : '!'}${ref.number}`
 }
 
+// GitLab's REST API names a project by its URL-encoded path.
+export function gitlabMrPath(ref: PrRef) {
+  return `projects/${encodeURIComponent(ref.project)}/merge_requests/${ref.number}`
+}
+
+// GitLab's REST API takes a discussion's id without its `gid://gitlab/Discussion/` prefix.
+export function gitlabDiscussionId(threadId: string) {
+  return threadId.split('/').at(-1) ?? threadId
+}
+
 function platformOfHost(host: string): Platform | null {
   if (host.includes('github')) {
     return 'github'

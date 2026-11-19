@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, SessionMessage } from 'claude-code'
 
-import type { FollowedPr, PrRef } from '../../types'
+import type { FollowedPr, PrRef, PrSnapshot } from '../../types'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
-import { findBashPrs, findSessionPrs, parsePrInput, prKey, uniquePrs } from './refs'
+import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
 
 const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-3' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
@@ -23,10 +23,22 @@ export async function readFollowedPrs($: EngineInterface) {
   return { prs, selectedIndex: Math.max(0, prs.findIndex(pr => prKey(pr.ref) === selected)) }
 }
 
-export async function findFollowedPr($: EngineInterface, ref: PrRef) {
-  const key = prKey(ref)
+// A PR the pane follows and has read, named by its URL as the pane's tools take it.
+export async function findLoadedPr($: EngineInterface, url: string): Promise<{ ref: PrRef; snapshot: PrSnapshot } | null> {
+  const ref = parsePrUrl(url)
 
-  return (await read($, followedPrs)).find(pr => prKey(pr.ref) === key) ?? null
+  if (!ref) {
+    return null
+  }
+
+  const key = prKey(ref)
+  const snapshot = (await read($, followedPrs)).find(pr => prKey(pr.ref) === key)?.snapshot
+
+  return snapshot ? { ref, snapshot } : null
+}
+
+export function notLoadedDenial(url: string) {
+  return { deny: `${url} is not a PR the /babysit-pr pane follows, or it has not loaded yet.` }
 }
 
 export async function optIn($: EngineInterface) {

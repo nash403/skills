@@ -12,6 +12,7 @@ const ENTRY: TriageEntry = {
   isHandled: false,
   summary: 'The save skips the null check on a new row.',
   details: 'A new row has no id yet, so `save` writes it with a null key. Check the id first.',
+  lastCommentUrl: 'u2',
 }
 
 const INPUT = { pr: 'https://github.com/acme/app/pull/12', threads: [ENTRY] }
@@ -80,6 +81,7 @@ test('every field of a thread is checked, and every error is said at once', () =
     isHandled: 'no',
     summary: 'x'.repeat(201),
     details: ' ',
+    lastCommentUrl: 'u2\nu3',
   }
 
   expect(errorsOf({ ...INPUT, threads: [entry] })).toEqual([
@@ -90,6 +92,7 @@ test('every field of a thread is checked, and every error is said at once', () =
     '`threads[0].isHandled` must be true or false.',
     '`threads[0].summary` must be one line of at most 200 characters.',
     '`threads[0].details` must be a text of at most 2000 characters.',
+    '`threads[0].lastCommentUrl` must be the URL of the newest comment you read in the thread.',
   ])
 })
 
@@ -101,13 +104,19 @@ test('two entries for one thread, or one name for two threads, are refused', () 
   expect(errorsOf(sameName)).toEqual(['`threads[1].name` null-check-save is already the name of PRRT_1.'])
 })
 
-test('recording a triage keeps the newest comment it covers, and skips threads the PR does not have', () => {
+test('recording a triage keeps the newest comment the model read, and skips threads the PR does not have', () => {
   const recorded = recordTriage({}, PR, [ENTRY, { ...ENTRY, threadId: 'PRRT_9', name: 'gone' }])
 
-  expect(recorded).toEqual({
-    triage: { PRRT_1: { ...withoutThreadId(ENTRY), lastCommentUrl: 'u2' } },
-    skipped: ['PRRT_9'],
-  })
+  expect(recorded).toEqual({ triage: { PRRT_1: withoutThreadId(ENTRY) }, skipped: ['PRRT_9'] })
+})
+
+test('a triage that covers a comment newer than the pane has is up to date once the pane reads it', () => {
+  const recorded = recordTriage({}, PR, [{ ...ENTRY, lastCommentUrl: 'u7' }])
+  const triage = 'triage' in recorded ? recorded.triage : {}
+  const [first] = PR.threads as [PrThread]
+
+  expect(triageStatus(first, triage).kind).toBe('changed')
+  expect(triageStatus({ ...first, comments: [...first.comments, { ...first.comments[0]!, url: 'u7' }] }, triage).kind).toBe('triaged')
 })
 
 test('a thread triaged again replaces its triage, and a name another thread holds is refused', () => {

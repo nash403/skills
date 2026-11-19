@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 
 import type { PrRef } from '../../types'
-import { findFollowedPr } from './followed'
-import { parsePrUrl, prKey, prLabel } from './refs'
+import { findLoadedPr, notLoadedDenial } from './followed'
+import { prKey, prLabel } from './refs'
 import { parseTriageInput, recordTriage } from './triage'
 import { threadsLabel } from './turns'
 
@@ -22,12 +22,13 @@ export async function saveTriage($: EngineInterface, input: unknown): Promise<{ 
     return { deny: parsed.errors.join('\n') }
   }
 
-  const ref = parsePrUrl(parsed.prUrl)
-  const snapshot = ref ? (await findFollowedPr($, ref))?.snapshot : null
+  const loaded = await findLoadedPr($, parsed.prUrl)
 
-  if (!ref || !snapshot) {
-    return { deny: `${parsed.prUrl} is not a PR the /babysit-pr pane follows, or it has not loaded yet.` }
+  if (!loaded) {
+    return notLoadedDenial(parsed.prUrl)
   }
+
+  const { ref, snapshot } = loaded
 
   const key = prKey(ref)
   const recorded = recordTriage((await read($, triages))[key] ?? {}, snapshot, parsed.entries)

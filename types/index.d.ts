@@ -90,8 +90,8 @@ export type FollowedPr = {
 
 export type TriageImportance = 'high' | 'medium' | 'low'
 
-// What the model recorded for one thread. `lastCommentUrl` is the thread's newest comment when it was recorded:
-// a newer one means the triage is out of date.
+// What the model recorded for one thread. `lastCommentUrl` is the newest comment the model read in the thread:
+// a newer one in the pane means the triage is out of date.
 export type ThreadTriage = {
   name: string
   classification: string
@@ -104,6 +104,9 @@ export type ThreadTriage = {
 
 // One PR's triage, by thread id.
 export type PrTriage = Record<string, ThreadTriage>
+
+// One PR's draft replies, the text by thread id.
+export type ReplyDrafts = Record<string, string>
 
 declare module 'claude-code' {
   interface PluginState {
@@ -119,6 +122,8 @@ declare module 'claude-code' {
       // By PR key.
       babysitTriages: Shaped<Record<string, PrTriage>>
       isBabysitTriageOpen: StateFamily<boolean>
+      // By PR key.
+      babysitReplyDrafts: Shaped<Record<string, ReplyDrafts>>
     }
   }
 }

@@ -3,19 +3,32 @@ import type { EngineInterface } from 'claude-code'
 import type { PrRef, PrSnapshot, Repo } from '../../types'
 import { GITHUB_PR_QUERY, parseGithubPr } from './github'
 import { GITLAB_MR_QUERY, parseGitlabApprovalTimes, parseGitlabMr } from './gitlab'
-import { parsePrUrl, parseRemote } from './refs'
+import { gitlabMrPath, parsePrUrl, parseRemote } from './refs'
+import { replyCommand, resolveCommand, writeFailureReason } from './writes'
+import type { WriteCommand } from './writes'
 
 const QUIET = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', GH_PROMPT_DISABLED: '1', NO_COLOR: '1' }
 
+export type WriteResult = { isOk: true } | { isOk: false; reason: string }
+
 type RunResult = { isOk: true; stdout: string } | { isOk: false; stdout: string; reason: string }
+
+// Rejects when the command cannot start.
+async function runProcess($: EngineInterface, argv: string[], cwd: string, stdin?: string) {
+  return $.process.run(argv, { cwd, env: QUIET, stdin, timeoutMs: 30_000 })
+}
+
+function didNotStart(argv: readonly string[], error: unknown) {
+  return `${argv[0]} did not start: ${String(error)}`
+}
 
 async function run($: EngineInterface, cwd: string, argv: string[]): Promise<RunResult> {
   try {
-    const { exitCode, stdout, stderr } = await $.process.run(argv, { cwd, env: QUIET, timeoutMs: 30_000 })
+    const { exitCode, stdout, stderr } = await runProcess($, argv, cwd)
 
     return exitCode === 0 ? { isOk: true, stdout } : { isOk: false, stdout, reason: stderr.trim() || `${argv[0]} exited with ${exitCode}` }
   } catch (error) {
-    return { isOk: false, stdout: '', reason: `${argv[0]} did not start: ${String(error)}` }
+    return { isOk: false, stdout: '', reason: didNotStart(argv, error) }
   }
 }
 
@@ -48,7 +61,7 @@ async function withApprovalTimes($: EngineInterface, cwd: string, ref: PrRef, mr
     return mr
   }
 
-  const path = `projects/${encodeURIComponent(ref.project)}/merge_requests/${ref.number}/approvals`
+  const path = `${gitlabMrPath(ref)}/approvals`
   const times = parseGitlabApprovalTimes(await runJson($, cwd, ['glab', 'api', '--hostname', ref.host, path]))
 
   return { ...mr, approvals: mr.approvals.map(({ user }) => ({ user, approvedAt: times[user] ?? null })) }
@@ -92,4 +105,23 @@ export async function findCurrentBranchPr($: EngineInterface, repo: Repo): Promi
   } catch {
     return null
   }
+}
+
+// The only write calls to a platform, run on the user's click in the pane.
+async function runWrite($: EngineInterface, { argv, stdin }: WriteCommand): Promise<WriteResult> {
+  try {
+    const reason = writeFailureReason(await runProcess($, argv, await $.session.cwd(), stdin))
+
+    return reason === null ? { isOk: true } : { isOk: false, reason }
+  } catch (error) {
+    return { isOk: false, reason: didNotStart(argv, error) }
+  }
+}
+
+export async function postReply($: EngineInterface, ref: PrRef, threadId: string, body: string) {
+  return runWrite($, replyCommand(ref, threadId, body))
+}
+
+export async function markThreadResolved($: EngineInterface, ref: PrRef, threadId: string) {
+  return runWrite($, resolveCommand(ref, threadId))
 }
