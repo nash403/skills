@@ -88,6 +88,23 @@ export type FollowedPr = {
   error: string | null
 }
 
+export type TriageImportance = 'high' | 'medium' | 'low'
+
+// What the model recorded for one thread. `lastCommentUrl` is the thread's newest comment when it was recorded:
+// a newer one means the triage is out of date.
+export type ThreadTriage = {
+  name: string
+  classification: string
+  importance: TriageImportance
+  isHandled: boolean
+  summary: string
+  details: string
+  lastCommentUrl: string
+}
+
+// One PR's triage, by thread id.
+export type PrTriage = Record<string, ThreadTriage>
+
 declare module 'claude-code' {
   interface PluginState {
     'nash403-skills': {
@@ -99,6 +116,9 @@ declare module 'claude-code' {
       babysitSelectedPr: string | null
       babysitScannedMessage: string | null
       isBabysitPrOptedIn: boolean
+      // By PR key.
+      babysitTriages: Shaped<Record<string, PrTriage>>
+      isBabysitTriageOpen: StateFamily<boolean>
     }
   }
 }

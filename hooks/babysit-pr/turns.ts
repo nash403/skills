@@ -93,7 +93,7 @@ export function concerningThreads(pr: PrSnapshot): ConcerningThread[] {
   return [...concerning.filter(item => isViewerTurn(item.turn)), ...concerning.filter(item => !isViewerTurn(item.turn))]
 }
 
-function threadsLabel(count: number) {
+export function threadsLabel(count: number) {
   return count === 1 ? '1 thread' : `${count} threads`
 }
 

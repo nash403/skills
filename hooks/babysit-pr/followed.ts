@@ -23,6 +23,12 @@ export async function readFollowedPrs($: EngineInterface) {
   return { prs, selectedIndex: Math.max(0, prs.findIndex(pr => prKey(pr.ref) === selected)) }
 }
 
+export async function findFollowedPr($: EngineInterface, ref: PrRef) {
+  const key = prKey(ref)
+
+  return (await read($, followedPrs)).find(pr => prKey(pr.ref) === key) ?? null
+}
+
 export async function optIn($: EngineInterface) {
   await update($, isOptedIn, () => true)
 }

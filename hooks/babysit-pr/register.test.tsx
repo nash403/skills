@@ -114,6 +114,8 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
   const calls: Calls = []
   const toasts: string[] = []
   const sessionReads: string[] = []
+  const tools: string[] = []
+  const prompts: string[] = []
   let openPanes: { id: string }[] = []
 
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
@@ -137,6 +139,16 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
 
     return { value: undefined }
   })
+  on('tool.register', (_: unknown, e: { name: string }) => {
+    tools.push(e.name)
+
+    return { value: { tool: `mcp__nash403-skills__${e.name}` } }
+  })
+  on('prompt.submit', (_: unknown, e: { text: string }) => {
+    prompts.push(e.text)
+
+    return { text: e.text }
+  })
   on('process.run', (_: unknown, e: { argv: readonly string[] }) => {
     const argv = [...e.argv]
     calls.push({ argv })
@@ -146,7 +158,7 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
     return { value: { exitCode: 0, stdout: typeof answer === 'string' ? answer : JSON.stringify(answer), stderr: '' } }
   })
 
-  return { calls, toasts, sessionReads, closePane: () => (openPanes = []) }
+  return { calls, toasts, sessionReads, tools, prompts, closePane: () => (openPanes = []) }
 }
 
 function answerTo(argv: string[], answers: Record<number, unknown>): unknown {
@@ -278,7 +290,7 @@ test('a PR added by hand is a number of the current repo or a URL', async ($, on
 
 test('nothing reads the session or calls gh or glab before /babysit-pr runs once', async ($, on) => {
   const clock = mock.clock(on)
-  const { calls, sessionReads } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }])
+  const { calls, sessionReads, tools } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }])
   on('classic.PostToolUse', () => ({}))
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
@@ -295,10 +307,12 @@ test('nothing reads the session or calls gh or glab before /babysit-pr runs once
   expect(sessionReads).toEqual([])
   expect(platformCalls(calls)).toEqual([])
   expect(calls.filter(({ argv }) => argv.join(' ') === 'gh pr view --json url')).toEqual([])
+  expect(tools).toEqual([])
 
   await $.command.run(OPEN_COMMAND)
   await clock.settle()
   expect(platformCalls(calls)).toEqual(['number=12', 'number=7'])
+  expect(tools).toEqual(['babysit_pr_triage'])
 })
 
 test('a gh command adds the PR it prints, and a subagent turn scans nothing', async ($, on) => {
@@ -451,4 +465,156 @@ test('a PR past the 100 commits the query reads says 100+', async ($, on) => {
     expect((await ui.find({ type: 'Text', text: /commits/ }))?.text).toBe('100+ commits')
     await ui.unmount()
   }
+})
+
+const TRIAGE_TOOL = 'mcp__nash403-skills__babysit_pr_triage'
+
+const TRIAGED_PR = githubAnswer(12, {
+  reviewThreads: {
+    totalCount: 2,
+    nodes: [
+      reviewThread('mine', false, [['cid', '2026-11-11T10:00:00Z', 'Rename this to `exportRows`.']]),
+      reviewThread('waiting', false, [
+        ['bob', '2026-11-11T10:00:00Z', 'Why does the export skip empty rows?'],
+        ['ana', '2026-11-11T11:00:00Z', 'On purpose.'],
+      ]),
+    ],
+  },
+})
+
+const MINE_TRIAGE = {
+  threadId: 'mine',
+  name: 'rename-export-rows',
+  classification: 'Nitpick',
+  importance: 'low',
+  isHandled: true,
+  summary: 'Cid wants the helper renamed to exportRows.',
+  details: 'The helper name says rows but it exports a page. Already renamed in c2.',
+}
+
+async function openOnTriagedPr($: any, on: any, answers: Record<number, unknown> = { 12: TRIAGED_PR }) {
+  const clock = mock.clock(on)
+  const engine = stubEngine(on, [], answers)
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  return { clock, ...engine }
+}
+
+test('a triage call fills its thread row, the badge counts the rest, more opens the longer summary', async ($, on) => {
+  await openOnTriagedPr($, on)
+
+  const before = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await before.find({ type: 'Text', text: /to triage/ }))?.text).toBe(' 2 to triage ')
+  expect((await before.find({ type: 'Text', text: /handled/ }))?.text).toBe('0 of 2 handled, 2 unknown')
+  await before.unmount()
+
+  const answer = await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/12', threads: [MINE_TRIAGE] })
+  expect(answer).toMatchObject({ result: 'Recorded the triage of 1 thread on acme/app#12. The /babysit-pr pane shows it.' })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe(' 1 to triage ')
+    expect((await ui.find({ type: 'Text', text: /handled,/ }))?.text).toBe('1 of 2 handled, 1 unknown')
+    const row = (await ui.find({ key: 'mine' }))?.text
+    expect(row).toContain('rename-export-rows')
+    expect(row).toContain('Nitpick')
+    expect(row).toContain('Cid wants the helper renamed to exportRows.')
+    expect(row).not.toContain('Already renamed in c2.')
+    expect(row).not.toContain('Rename this to')
+    expect((await ui.find({ key: 'waiting' }))?.text).toContain('Why does the export skip empty rows?')
+
+    await ui.press({ key: 'more:mine' })
+    expect((await ui.find({ key: 'mine' }))?.text).toContain('Already renamed in c2.')
+    await ui.press({ key: 'more:mine' })
+    expect((await ui.find({ key: 'mine' }))?.text).not.toContain('Already renamed in c2.')
+    await ui.unmount()
+  }
+})
+
+test('every thread triaged and handled shows all feedback handled, with nothing to triage', async ($, on) => {
+  await openOnTriagedPr($, on)
+
+  await $.tool.call({
+    tool: TRIAGE_TOOL,
+    pr: 'https://github.com/acme/app/pull/12',
+    threads: [MINE_TRIAGE, { ...MINE_TRIAGE, threadId: 'waiting', name: 'skip-empty-rows' }],
+  })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    expect((await ui.find({ type: 'Text', text: /handled/ }))?.text).toBe('✓ all feedback handled')
+    expect(await ui.find({ type: 'Text', text: /to triage/ })).toBeUndefined()
+    expect(await ui.find({ key: 'triage' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('a comment after the triage puts its thread back to triage', async ($, on) => {
+  const answers: Record<number, unknown> = { 12: TRIAGED_PR }
+  await openOnTriagedPr($, on, answers)
+  await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/12', threads: [MINE_TRIAGE] })
+
+  answers[12] = githubAnswer(12, {
+    reviewThreads: {
+      totalCount: 2,
+      nodes: [
+        reviewThread('mine', false, [
+          ['cid', '2026-11-11T10:00:00Z', 'Rename this to `exportRows`.'],
+          ['cid', '2026-11-12T10:00:00Z', 'Also the test.'],
+        ]),
+      ],
+    },
+  })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    await ui.press({ key: 'refresh' })
+    expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe(' 1 to triage ')
+    expect((await ui.find({ key: 'mine' }))?.text).toContain('new comment since triage')
+    expect((await ui.find({ type: 'Text', text: /handled/ }))?.text).toBe('0 of 1 handled, 1 unknown')
+    await ui.unmount()
+  }
+})
+
+test('Triage asks for the threads not triaged yet, Explain for one thread', async ($, on) => {
+  const { prompts } = await openOnTriagedPr($, on)
+  await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/12', threads: [MINE_TRIAGE] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    prompts.length = 0
+
+    await ui.press({ key: 'triage' })
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain('Triage 1 thread on my PR acme/app#12 (https://github.com/acme/app/pull/12)')
+    expect(prompts[0]).toContain('- waiting: https://github.com/acme/app/pull/12#discussion_waiting_0')
+    expect(prompts[0]).not.toContain('- mine:')
+
+    await ui.press({ key: 'explain:mine' })
+    expect(prompts[1]).toContain('Explain the problem that review thread rename-export-rows raises on my PR acme/app#12')
+    expect(prompts[1]).toContain('Thread mine: https://github.com/acme/app/pull/12#discussion_mine_0')
+    await ui.unmount()
+  }
+})
+
+test('a triage call that is malformed or names a PR the pane does not follow is refused', async ($, on) => {
+  const { calls } = await openOnTriagedPr($, on)
+  calls.length = 0
+
+  const malformed = await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/12', threads: [{ ...MINE_TRIAGE, importance: 'urgent' }] })
+  const unfollowed = await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/99', threads: [MINE_TRIAGE] })
+
+  expect(malformed).toMatchObject({ deny: '`threads[0].importance` must be high, medium or low.' })
+  expect(unfollowed).toMatchObject({ deny: 'https://github.com/acme/app/pull/99 is not a PR the /babysit-pr pane follows, or it has not loaded yet.' })
+  expect(calls).toEqual([])
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe(' 2 to triage ')
+  await ui.unmount()
 })

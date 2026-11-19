@@ -1,14 +1,26 @@
 import type { Color, EngineInterface, RenderInput } from 'claude-code'
 
-import type { CiState, FollowedPr, PrSnapshot } from '../../types'
+import type { CiState, FollowedPr, PrRef, PrSnapshot, PrThread, PrTriage, TriageImportance } from '../../types'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
+import { explainPrompt, triagePrompt } from './prompts'
 import { prLabel } from './refs'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import type { StatusChip } from './rules'
+import { feedbackTally, triageStatus } from './triage'
+import type { FeedbackTally, TriageStatus } from './triage'
+import { readPrTriage } from './triaged'
 import { concerningThreads, excerpt, isViewerTurn, nextSteps } from './turns'
 import type { ConcerningThread } from './turns'
 
 type PaneInput = RenderInput<'Pane'>
+
+// State the thread list needs, read ahead since helpers that draw are sync.
+type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; openDetails: ReadonlySet<string> }
+
+type TriagedStatus = Exclude<TriageStatus, { kind: 'not-triaged' }>
+
+// Whether a triaged thread shows its longer summary, by thread id.
+const detailsOpenFamily = { plugin: 'nash403-skills', key: 'isBabysitTriageOpen' } as const
 
 const CHIP_COLORS: Record<StatusChip, Color> = {
   merged: 'merged',
@@ -20,6 +32,8 @@ const CHIP_COLORS: Record<StatusChip, Color> = {
   resolved: 'success',
   opened: 'subtle',
 }
+
+const IMPORTANCE_COLORS: Record<TriageImportance, Color> = { high: 'error', medium: 'warning', low: 'inactive' }
 
 const CI_TEXTS: Record<CiState, { text: string; color: Color }> = {
   none: { text: 'no CI', color: 'inactive' },
@@ -132,8 +146,54 @@ function nextStepLines($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
-function threadRow($: EngineInterface, e: PaneInput, { thread, firstComment, turn }: ConcerningThread) {
-  const { Box, Link, Text } = $.ui.resolve(e)
+async function readOpenDetails($: EngineInterface, threads: readonly PrThread[]) {
+  const reads = await Promise.all(threads.map(async ({ id }) => ({ id, isOpen: (await $.state.get({ ...detailsOpenFamily, id })).value })))
+
+  return new Set(reads.filter(({ isOpen }) => isOpen === true).map(({ id }) => id))
+}
+
+async function toggleDetails($: EngineInterface, threadId: string) {
+  const { value: isOpen = false } = await $.state.get({ ...detailsOpenFamily, id: threadId })
+  await $.state.set({ ...detailsOpenFamily, id: threadId }, !isOpen)
+}
+
+function submitPrompt($: EngineInterface, text: string) {
+  void $.prompt.submit({ text, asUser: true })
+}
+
+function triageLines($: EngineInterface, e: PaneInput, threadId: string, status: TriagedStatus, details: 'open' | 'closed') {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const { name, classification, importance, isHandled, summary } = status.triage
+  const isOpen = details === 'open'
+
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        <Text bold color="suggestion">
+          {name}
+        </Text>
+        <Text>{classification}</Text>
+        <Text color={IMPORTANCE_COLORS[importance]}>{importance}</Text>
+        <Text color={isHandled ? 'success' : 'warning'}>{isHandled ? '✓ handled' : 'not handled'}</Text>
+        {status.kind === 'changed' && <Text color="warning">new comment since triage</Text>}
+      </Box>
+      <Box flexDirection="row" columnGap={1}>
+        <Text wrap="wrap">{summary}</Text>
+        <Button key={`more:${threadId}`} label={isOpen ? 'less' : 'more'} plain dimColor onPress={() => void toggleDetails($, threadId)} />
+      </Box>
+      {isOpen && (
+        <Text dimColor wrap="wrap">
+          {status.triage.details}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
+function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread, firstComment, turn }: ConcerningThread) {
+  const { Box, Button, Link, Text } = $.ui.resolve(e)
+  const status = triageStatus(thread, view.triage)
+  const name = status.kind === 'not-triaged' ? null : status.triage.name
 
   return (
     <Box key={thread.id} flexDirection="column">
@@ -143,28 +203,61 @@ function threadRow($: EngineInterface, e: PaneInput, { thread, firstComment, tur
         <Link href={firstComment.url}>
           <Text dimColor>↗</Text>
         </Link>
+        <Button
+          key={`explain:${thread.id}`}
+          label="Explain"
+          plain
+          dimColor
+          onPress={() => submitPrompt($, explainPrompt(view.ref, view.pr, thread, name))}
+        />
       </Box>
-      <Box paddingLeft={2}>
-        <Text dimColor wrap="wrap">
-          {excerpt(firstComment.body)}
-        </Text>
-      </Box>
+      {status.kind === 'not-triaged' ? (
+        <Box paddingLeft={2}>
+          <Text dimColor wrap="wrap">
+            {excerpt(firstComment.body)}
+          </Text>
+        </Box>
+      ) : (
+        triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
+      )}
     </Box>
   )
 }
 
-function threadList($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
-  const { Box, Text } = $.ui.resolve(e)
-  const concerning = concerningThreads(pr)
+function feedbackText({ toTriage, handled, total }: FeedbackTally) {
+  if (handled === total) {
+    return '✓ all feedback handled'
+  }
+
+  return `${handled} of ${total} handled${toTriage.length > 0 ? `, ${toTriage.length} unknown` : ''}`
+}
+
+function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const concerning = concerningThreads(view.pr)
 
   if (concerning.length === 0) {
     return null
   }
 
+  const tally = feedbackTally(concerning.map(item => item.thread), view.triage)
+  const { toTriage } = tally
+
   return (
     <Box flexDirection="column">
-      <Text bold>Your open threads ({concerning.length})</Text>
-      {concerning.map(item => threadRow($, e, item))}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        <Text bold>Your open threads ({concerning.length})</Text>
+        <Text color={tally.handled === tally.total ? 'success' : 'subtle'}>{feedbackText(tally)}</Text>
+        {toTriage.length > 0 && (
+          <Fragment>
+            <Text color="warning" inverse>
+              {` ${toTriage.length} to triage `}
+            </Text>
+            <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />
+          </Fragment>
+        )}
+      </Box>
+      {concerning.map(item => threadRow($, e, view, item))}
     </Box>
   )
 }
@@ -188,7 +281,7 @@ function participantRows($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
-function prView($: EngineInterface, e: PaneInput, followed: FollowedPr) {
+function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null) {
   const { Box, Text } = $.ui.resolve(e)
   const pr = followed.snapshot
 
@@ -210,7 +303,7 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr) {
       {pr && nextStepLines($, e, pr)}
       {pr && countsLine($, e, pr)}
       {pr && participantRows($, e, pr)}
-      {pr && threadList($, e, pr)}
+      {view && threadList($, e, view)}
     </Box>
   )
 }
@@ -232,6 +325,14 @@ function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefin
   )
 }
 
+async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot): Promise<ThreadsView> {
+  const triage = await readPrTriage($, ref)
+  // Only a triaged thread has a longer summary to open.
+  const openDetails = await readOpenDetails($, pr.threads.filter(thread => !thread.isResolved && thread.id in triage))
+
+  return { ref, pr, triage, openDetails }
+}
+
 export async function drawPane($: EngineInterface, e: PaneInput) {
   const { Box, Input, Text } = $.ui.resolve(e)
   const { prs, selectedIndex } = await readFollowedPrs($)
@@ -241,10 +342,12 @@ export async function drawPane($: EngineInterface, e: PaneInput) {
     return glance($, e, shown)
   }
 
+  const view = shown?.snapshot ? await readThreadsView($, shown.ref, shown.snapshot) : null
+
   return (
     <Box flexDirection="column" rowGap={1} width="100%">
       {shown ? switcher($, e, prs, selectedIndex) : <Text dimColor>No PR yet. The PRs and MRs this session opens or mentions show up here.</Text>}
-      {shown && prView($, e, shown)}
+      {shown && prView($, e, shown, view)}
       <Input key="add" placeholder="Add a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />
     </Box>
   )
