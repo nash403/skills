@@ -1,11 +1,11 @@
-import type { EngineInterface, RenderInput } from 'claude-code'
+import type { EngineInterface, RenderChildren, RenderInput, Space } from 'claude-code'
 
 import type { FollowedPr, PrChange, PrRef, PrSnapshot, PrSummary, PrThread, PrTriage, PrWatch, ReplyDrafts } from '../../types'
 import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveThread, unapprove } from './actions'
 import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
-import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, displayName, initials, isBot } from './look'
+import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, diffBarSvg, diffBlocks, displayName, initials, isBot } from './look'
 import type { Tone } from './look'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
@@ -32,15 +32,75 @@ type Watches = Record<string, PrWatch>
 // Whether a triaged thread shows its longer summary, by thread id.
 const detailsOpenFamily = { plugin: 'nash403-skills', key: 'isBabysitTriageOpen' } as const
 
+// Off the terminal a chip is a rounded pill. The terminal keeps it flat: a border there costs two rows.
+function isCellSurface(e: PaneInput) {
+  return e.surface === 'terminal'
+}
+
 // A filled chip: its own background, so it reads on a light or a dark theme alike.
 function chip($: EngineInterface, e: PaneInput, text: string, tone: Tone, key?: string) {
   const { Box, Text } = $.ui.resolve(e)
+  const pill = isCellSurface(e) ? {} : { borderStyle: 'round', borderColor: tone.bg }
 
   return (
-    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={1}>
+    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={1} {...pill}>
       <Text color={tone.fg} bold>
         {text}
       </Text>
+    </Box>
+  )
+}
+
+// A section's title: small, dim and in capitals, so the content under it carries the weight.
+function sectionTitle($: EngineInterface, e: PaneInput, title: string, aside?: RenderChildren) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
+      <Text size="caption" weight="semibold" dimColor>
+        {title.toUpperCase()}
+      </Text>
+      {aside}
+    </Box>
+  )
+}
+
+// A tone washed out to a surface: translucent, so it tints a light or a dark theme alike.
+function tint(tone: Tone, strength: 'faint' | 'soft' = 'faint') {
+  return `${tone.bg}${strength === 'faint' ? '14' : '24'}`
+}
+
+type SlabOptions = { key?: string; rail?: string; wash?: string; gap?: Space; children: RenderChildren }
+
+// A section's surface: a rounded tinted slab with a colored rail down its left edge. The terminal keeps the rail
+// alone: a filled background there paints whole rows in a color the person's theme never chose.
+function slab($: EngineInterface, e: PaneInput, { key, rail, wash = tint(TONES.slate), gap = 'md', children }: SlabOptions) {
+  const { Box } = $.ui.resolve(e)
+  const isCells = isCellSurface(e)
+  const surface = isCells ? {} : ({ backgroundColor: wash, borderStyle: 'round', borderColor: wash, overflow: 'hidden' } as const)
+
+  return (
+    <Box key={key} flexDirection="row" {...surface}>
+      {rail !== undefined && <Box width={1} flexShrink={0} backgroundColor={rail} />}
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} rowGap={gap} paddingX={isCells ? 1 : 'md'} paddingY={isCells ? 0 : 'sm'}>
+        {children}
+      </Box>
+    </Box>
+  )
+}
+
+// What stands where content will come: a quiet rounded frame, a glyph, and what will land there.
+function placeholder($: EngineInterface, e: PaneInput, key: string, text: string) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return (
+    <Box key={key} flexDirection="row" columnGap="sm" borderStyle="dashed" borderColor="subtle" paddingX="md" paddingY="sm">
+      <Text dimColor>◌</Text>
+      <Box flexShrink={1}>
+        <Text dimColor italic wrap="wrap">
+          {text}
+        </Text>
+      </Box>
     </Box>
   )
 }
@@ -54,7 +114,7 @@ function person($: EngineInterface, e: PaneInput, name: string, isViewer: boolea
   const { Box, Text } = $.ui.resolve(e)
 
   return (
-    <Box key={`person:${name}`} flexDirection="row" columnGap={1}>
+    <Box key={`person:${name}`} flexDirection="row" columnGap="sm" alignItems="center">
       {avatar($, e, name)}
       <Text bold={isViewer}>{isViewer ? 'you' : displayName(name)}</Text>
     </Box>
@@ -88,17 +148,17 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
   const isAnotherUnseen = prs.some(pr => pr !== shown && isUnseen(pr))
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
-      {hasMany && <Button key="previous" label="‹" plain onPress={() => void select($, previous.ref)} />}
+    <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center" width="100%">
       {hasMany && (
-        <Box flexDirection="row" columnGap={1}>
+        <Box flexDirection="row" columnGap="sm" alignItems="center">
+          <Button key="previous" label="‹" plain onPress={() => void select($, previous.ref)} />
           <Text dimColor tabular>
             {index + 1}/{prs.length}
           </Text>
           {isAnotherUnseen && unseenDot($, e)}
+          <Button key="next" label="›" plain onPress={() => void select($, next.ref)} />
         </Box>
       )}
-      {hasMany && <Button key="next" label="›" plain onPress={() => void select($, next.ref)} />}
       {isUnseen(shown) && unseenDot($, e)}
       {url ? (
         <Link href={url}>
@@ -115,55 +175,119 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
 }
 
 // Past the query's cap, the count reads `100+`.
-function commitsLabel({ commits, hasMoreCommits }: PrSnapshot) {
-  if (commits.length === 1) {
-    return '1 commit'
-  }
-
-  return `${commits.length}${hasMoreCommits ? '+' : ''} commits`
+function commitCount({ commits, hasMoreCommits }: PrSnapshot) {
+  return `${commits.length}${hasMoreCommits ? '+' : ''}`
 }
 
-// The PR's vital signs: its CI and flags as chips, then the size of the diff and the threads.
-function vitals($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
-  const { Box, Text } = $.ui.resolve(e)
+// The PR's flags as chips: its CI, then what holds it back.
+function flags($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const { Box } = $.ui.resolve(e)
   const ci = pr.state === 'open' && pr.ci !== 'none' ? CI_LOOKS[pr.ci] : null
-  const { open, total } = threadCounts(pr)
+  const items = [
+    ci && chip($, e, ci.text, ci.tone),
+    isPushedSinceApproval(pr) && chip($, e, '⚠ pushed since your approval', TONES.saffron),
+    pr.isDraft && chip($, e, 'draft', TONES.slate),
+    pr.blocked && chip($, e, `blocked: ${pr.blocked}`, TONES.signal),
+    isSkipCi(pr.title, pr.headMessage) && chip($, e, 'skip CI', TONES.saffron),
+  ].filter(Boolean)
+
+  if (items.length === 0) {
+    return null
+  }
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={1}>
-      {ci && chip($, e, ci.text, ci.tone)}
-      {isPushedSinceApproval(pr) && chip($, e, '⚠ pushed since your approval', TONES.saffron)}
-      {pr.isDraft && chip($, e, 'draft', TONES.slate)}
-      {pr.blocked && chip($, e, `blocked: ${pr.blocked}`, TONES.signal)}
-      {isSkipCi(pr.title, pr.headMessage) && chip($, e, 'skip CI', TONES.saffron)}
-      <Box flexDirection="row" columnGap={1}>
-        <Text color="diffAdded" tabular>
-          +{pr.additions}
-        </Text>
-        <Text color="diffRemoved" tabular>
-          −{pr.deletions}
-        </Text>
-      </Box>
-      <Text dimColor>{pr.changedFiles === 1 ? '1 file' : `${pr.changedFiles} files`}</Text>
-      <Text dimColor>{commitsLabel(pr)}</Text>
-      <Text dimColor>
-        threads {open}/{total}
-        {pr.hasMoreThreads ? '+' : ''} open
-      </Text>
+    <Box flexDirection="row" flexWrap="wrap" columnGap="sm" rowGap="sm">
+      {items}
     </Box>
   )
 }
 
-// The PR at a glance, framed in its status color: status and title, branches and author, what it does, its vitals.
+// One figure of the stat strip: the value large, what it counts small beneath.
+function tile($: EngineInterface, e: PaneInput, key: string, value: RenderChildren, label: RenderChildren) {
+  const { Box } = $.ui.resolve(e)
+  const surface = isCellSurface(e)
+    ? {}
+    : ({ backgroundColor: tint(TONES.slate), borderStyle: 'round', borderColor: tint(TONES.slate), paddingX: 'md', paddingY: 'sm' } as const)
+
+  return (
+    <Box key={key} flexDirection="column" rowGap="xs" minWidth={10} {...surface}>
+      {value}
+      {label}
+    </Box>
+  )
+}
+
+// The diff's shares under its line counts: a rounded bar where the surface draws an Svg, five blocks on the terminal.
+function diffBar($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const table = $.ui.resolve(e)
+  const { Box, Text } = table
+  const alt = `${pr.additions} lines added, ${pr.deletions} removed`
+
+  if ('Svg' in table) {
+    const { Svg } = table
+
+    return <Svg source={diffBarSvg(pr.additions, pr.deletions, 64, 6)} alt={alt} width={64} height={6} />
+  }
+
+  const { added, removed, neutral } = diffBlocks(pr.additions, pr.deletions)
+
+  return (
+    <Box flexDirection="row">
+      <Text color="diffAdded">{'■'.repeat(added)}</Text>
+      <Text color="diffRemoved">{'■'.repeat(removed)}</Text>
+      <Text dimColor>{'■'.repeat(neutral)}</Text>
+    </Box>
+  )
+}
+
+// The size of the change in one strip: lines with their diff bar, files, commits, then the open threads under a 💬.
+function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const { Box, Text } = $.ui.resolve(e)
+  const { open, total } = threadCounts(pr)
+  const figure = (text: string) => (
+    <Text size="heading" weight="semibold" tabular>
+      {text}
+    </Text>
+  )
+  const caption = (text: string) => (
+    <Text size="caption" dimColor>
+      {text}
+    </Text>
+  )
+  const lines = (
+    <Box flexDirection="row" columnGap="sm">
+      <Text size="heading" weight="semibold" color="diffAdded" tabular>
+        +{pr.additions}
+      </Text>
+      <Text size="heading" weight="semibold" color="diffRemoved" tabular>
+        −{pr.deletions}
+      </Text>
+    </Box>
+  )
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={isCellSurface(e) ? 'xl' : 'sm'} rowGap="sm">
+      {tile($, e, 'stat:lines', lines, diffBar($, e, pr))}
+      {tile($, e, 'stat:files', figure(String(pr.changedFiles)), caption(pr.changedFiles === 1 ? 'file' : 'files'))}
+      {tile($, e, 'stat:commits', figure(commitCount(pr)), caption(pr.commits.length === 1 ? 'commit' : 'commits'))}
+      {tile($, e, 'stat:threads', figure(`💬 ${open}/${total}${pr.hasMoreThreads ? '+' : ''}`), caption('open'))}
+    </Box>
+  )
+}
+
+// The PR at a glance, framed in its status color: status and title, author and branches, what it does, its flags
+// and the size of the change.
 function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSummary | undefined) {
   const { Box, Text } = $.ui.resolve(e)
   const status = statusChip(pr)
   const look = STATUS_LOOKS[status]
 
-  return (
-    <Box flexDirection="column" rowGap={1} borderStyle="round" borderColor={look.tone.bg} paddingX={1}>
-      <Box flexDirection="column">
-        <Box flexDirection="row" columnGap={1} alignItems="flex-start">
+  return slab($, e, {
+    rail: look.tone.bg,
+    wash: tint(look.tone),
+    children: [
+      <Box key="head" flexDirection="column" rowGap="sm">
+        <Box flexDirection="row" columnGap="md" alignItems="flex-start">
           {chip($, e, `${look.glyph} ${status}`, look.tone, 'status')}
           <Box flexShrink={1}>
             <Text size="heading" weight="bold" wrap="wrap">
@@ -171,46 +295,84 @@ function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSum
             </Text>
           </Box>
         </Box>
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
           {person($, e, pr.author, pr.author === pr.viewer)}
           <Text dimColor wrap="truncate-middle">
             {pr.headBranch} → {pr.baseBranch}
           </Text>
         </Box>
-      </Box>
-      {summary && summary.text !== '' && <Text wrap="wrap">{summary.text}</Text>}
-      {vitals($, e, pr)}
-    </Box>
-  )
+      </Box>,
+      summary && summary.text !== '' && (
+        <Text key="summary" wrap="wrap">
+          {summary.text}
+        </Text>
+      ),
+      summary && summary.text === '' && (
+        <Text key="summary" dimColor italic>
+          No description.
+        </Text>
+      ),
+      flags($, e, pr),
+      stats($, e, pr),
+    ],
+  })
 }
 
-// Who moves next. The user's move is the loudest thing in the pane; everyone else's reads quietly.
-function nextStepLines($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+// While the first read runs: the card's frame with gray bars where its lines will be.
+function loadingCard($: EngineInterface, e: PaneInput, ref: PrRef) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return slab($, e, {
+    rail: 'subtle',
+    children: (
+      <Box flexDirection="column" rowGap="md">
+        <Text dimColor>Reading {prLabel(ref)}…</Text>
+        <Box flexDirection="column" rowGap="sm">
+          <Text dimColor>{'━'.repeat(28)}</Text>
+          <Text dimColor>{'━'.repeat(18)}</Text>
+        </Box>
+      </Box>
+    ),
+  })
+}
+
+// Who moves next, with the viewer's own buttons. The user's move is the loudest thing in the pane, framed in the one
+// color nothing else uses; everyone else's reads quietly.
+function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const steps = nextSteps(pr)
+  const actions = peerActions($, e, ref, pr)
 
-  if (steps.length === 0) {
+  if (steps.length === 0 && actions === null) {
     return null
   }
 
-  return (
-    <Box flexDirection="column">
-      {steps.map(({ actor, action }) =>
-        actor === 'You' ? (
-          <Box key={`${actor}: ${action}`} flexDirection="row" columnGap={1}>
-            {chip($, e, 'your move', TONES.fuchsia, `move:${action}`)}
-            <Text bold>{action}</Text>
-          </Box>
-        ) : (
-          <Box key={`${actor}: ${action}`}>
-            <Text dimColor>
-              ◷ {actor}: {action}
-            </Text>
-          </Box>
-        ),
-      )}
-    </Box>
-  )
+  const isMyMove = steps.some(({ actor }) => actor === 'You')
+
+  return slab($, e, {
+    rail: isMyMove ? TONES.fuchsia.bg : undefined,
+    wash: isMyMove ? tint(TONES.fuchsia) : tint(TONES.slate),
+    gap: 'sm',
+    children: (
+      <Box flexDirection="column" rowGap="sm">
+        {steps.map(({ actor, action }) =>
+          actor === 'You' ? (
+            <Box key={`${actor}: ${action}`} flexDirection="row" columnGap="md" alignItems="center">
+              {chip($, e, 'your move', TONES.fuchsia, `move:${action}`)}
+              <Text bold>{action}</Text>
+            </Box>
+          ) : (
+            <Box key={`${actor}: ${action}`}>
+              <Text dimColor>
+                ◷ {actor}: {action}
+              </Text>
+            </Box>
+          ),
+        )}
+        {actions}
+      </Box>
+    ),
+  })
 }
 
 // On a peer's open PR: the Approve / Unapprove toggle, and Review changes once code was pushed since the viewer's review.
@@ -225,7 +387,7 @@ function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapsho
   const fromSha = headToReviewFrom(pr)
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+    <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm">
       {approval ? (
         <Button key="unapprove" label="Unapprove" plain dimColor onPress={() => void unapprove($, ref, approval)} />
       ) : (
@@ -295,19 +457,22 @@ function changesBlock($: EngineInterface, e: PaneInput, view: ThreadsView, chang
     return null
   }
 
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor={TONES.cobalt.bg} paddingX={1}>
-      <Text bold color={TONES.cobalt.bg}>
+  return slab($, e, {
+    rail: TONES.cobalt.bg,
+    wash: tint(TONES.cobalt),
+    gap: 'sm',
+    children: [
+      <Text key="title" bold color={TONES.cobalt.bg}>
         Changes since your last visit
-      </Text>
-      {changes.map(change => (
-        <Box key={changeKey(change)} flexDirection="row" flexWrap="wrap" columnGap={2}>
+      </Text>,
+      ...changes.map(change => (
+        <Box key={changeKey(change)} flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
           <Text>{changeText(change)}</Text>
           {changeAnswer($, e, view, change)}
         </Box>
-      ))}
-    </Box>
-  )
+      )),
+    ],
+  })
 }
 
 async function readOpenDetails($: EngineInterface, threads: readonly PrThread[]) {
@@ -331,8 +496,8 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
   const isOpen = details === 'open'
 
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+    <Box flexDirection="column" rowGap="sm">
+      <Box flexDirection="row" flexWrap="wrap" columnGap="sm" rowGap="sm" alignItems="center">
         <Text bold color={TONES.cobalt.bg}>
           {name}
         </Text>
@@ -341,8 +506,10 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
         <Text color={isHandled ? TONES.moss.bg : TONES.saffron.bg}>{isHandled ? '✓ handled' : 'not handled'}</Text>
         {status.kind === 'changed' && <Text color={TONES.saffron.bg}>new comment since triage</Text>}
       </Box>
-      <Box flexDirection="row" columnGap={1}>
-        <Text wrap="wrap">{summary}</Text>
+      <Box flexDirection="row" columnGap="sm">
+        <Box flexShrink={1}>
+          <Text wrap="wrap">{summary}</Text>
+        </Box>
         <Button key={`more:${threadId}`} label={isOpen ? 'less' : 'more'} plain dimColor onPress={() => void toggleDetails($, threadId)} />
       </Box>
       {isOpen && (
@@ -359,18 +526,23 @@ function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body
   const { Box, Button, Text } = $.ui.resolve(e)
   const threadId = target.thread.id
 
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor={TONES.fuchsia.bg} paddingX={1}>
-      <Text bold color={TONES.fuchsia.bg}>
-        Draft reply
-      </Text>
-      <Text wrap="wrap">{body}</Text>
-      <Box flexDirection="row" columnGap={2}>
+  return slab($, e, {
+    rail: TONES.fuchsia.bg,
+    wash: tint(TONES.fuchsia),
+    gap: 'sm',
+    children: [
+      <Text key="title" size="caption" weight="semibold" color={TONES.fuchsia.bg}>
+        DRAFT REPLY
+      </Text>,
+      <Text key="body" wrap="wrap">
+        {body}
+      </Text>,
+      <Box key="buttons" flexDirection="row" columnGap="md">
         <Button key={`post:${threadId}`} label="Post" variant="primary" onPress={() => void postDraft($, target, body)} />
         <Button key={`discard:${threadId}`} label="Discard" plain dimColor onPress={() => void discardDraft($, target, body)} />
-      </Box>
-    </Box>
-  )
+      </Box>,
+    ],
+  })
 }
 
 function turnMark($: EngineInterface, e: PaneInput, threadId: string, isMine: boolean) {
@@ -379,41 +551,46 @@ function turnMark($: EngineInterface, e: PaneInput, threadId: string, isMine: bo
   return isMine ? chip($, e, 'your turn', TONES.fuchsia, `turn:${threadId}`) : <Text dimColor>◷ waiting</Text>
 }
 
+// One thread as a card: who opened it and whose turn it is, what it says, then what can be done about it. A thread
+// that waits on the viewer is framed in their color.
 function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread, firstComment, turn }: ConcerningThread) {
   const { Box, Button, Link, Text } = $.ui.resolve(e)
   const status = triageStatus(thread, view.triage)
   const name = status.kind === 'not-triaged' ? null : status.triage.name
   const target: ThreadTarget = { ref: view.ref, pr: view.pr, thread, name }
   const draft = view.drafts[thread.id]
+  const isMine = isViewerTurn(turn)
 
-  return (
-    <Box key={thread.id} flexDirection="column" rowGap={1}>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+  return slab($, e, {
+    key: thread.id,
+    rail: isMine ? TONES.fuchsia.bg : TONES.slate.bg,
+    children: [
+      <Box key="head" flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
         {person($, e, firstComment.author, firstComment.author === view.pr.viewer)}
-        {turnMark($, e, thread.id, isViewerTurn(turn))}
+        {turnMark($, e, thread.id, isMine)}
+        <Box flexGrow={1} />
         <Link href={firstComment.url}>
           <Text dimColor underline>
             open ↗
           </Text>
         </Link>
-        <Box flexGrow={1} />
+      </Box>,
+      status.kind === 'not-triaged' ? (
+        <Text key="body" dimColor wrap="wrap">
+          {excerpt(firstComment.body)}
+        </Text>
+      ) : (
+        triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
+      ),
+      draft !== undefined && draftLines($, e, target, draft),
+      <Box key="actions" flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm">
         <Button key={`explain:${thread.id}`} label="Explain" plain dimColor onPress={() => submitPrompt($, explainPrompt(target))} />
         {isViewerPr(view.pr) && <Button key={`fix:${thread.id}`} label="Fix" plain dimColor onPress={() => void askFix($, target)} />}
         <Button key={`reply:${thread.id}`} label="Reply" plain dimColor onPress={() => void askReply($, target)} />
         <Button key={`resolve:${thread.id}`} label="Resolve" plain dimColor onPress={() => void resolveThread($, target)} />
-      </Box>
-      <Box flexDirection="column" paddingLeft={2}>
-        {status.kind === 'not-triaged' ? (
-          <Text dimColor wrap="wrap">
-            {excerpt(firstComment.body)}
-          </Text>
-        ) : (
-          triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
-        )}
-        {draft !== undefined && draftLines($, e, target, draft)}
-      </Box>
-    </Box>
-  )
+      </Box>,
+    ],
+  })
 }
 
 function feedbackText({ toTriage, handled, total }: FeedbackTally) {
@@ -424,29 +601,43 @@ function feedbackText({ toTriage, handled, total }: FeedbackTally) {
   return `${handled} of ${total} handled${toTriage.length > 0 ? `, ${toTriage.length} unknown` : ''}`
 }
 
+// The threads that concern the viewer, under a title with the tally and the Triage button; a placeholder until one does.
 function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   const { Box, Button, Text } = $.ui.resolve(e)
   const concerning = concerningThreads(view.pr)
 
   if (concerning.length === 0) {
-    return null
+    return (
+      <Box flexDirection="column" rowGap="sm">
+        {sectionTitle($, e, 'Your open threads')}
+        {placeholder(
+          $,
+          e,
+          'threads-empty',
+          isViewerPr(view.pr)
+            ? 'No open thread waits on you. Review comments land here, with Explain, Fix and Reply beside each one.'
+            : 'No open thread of yours. Comments you leave on this PR land here, with what was said since.',
+        )}
+      </Box>
+    )
   }
 
   const tally = feedbackTally(concerning.map(item => item.thread), view.triage)
   const { toTriage } = tally
+  const aside = [
+    <Text key="count" size="caption" dimColor tabular>
+      {concerning.length}
+    </Text>,
+    <Text key="tally" color={tally.handled === tally.total ? TONES.moss.bg : undefined} dimColor={tally.handled !== tally.total}>
+      {feedbackText(tally)}
+    </Text>,
+    toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, 'to-triage'),
+    toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />,
+  ]
 
   return (
-    <Box flexDirection="column" rowGap={1}>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        <Text weight="bold" size="heading">
-          Your open threads ({concerning.length})
-        </Text>
-        <Text color={tally.handled === tally.total ? TONES.moss.bg : undefined} dimColor={tally.handled !== tally.total}>
-          {feedbackText(tally)}
-        </Text>
-        {toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, 'to-triage')}
-        {toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />}
-      </Box>
+    <Box flexDirection="column" rowGap="sm">
+      {sectionTitle($, e, 'Your open threads', aside)}
       {concerning.map(item => threadRow($, e, view, item))}
     </Box>
   )
@@ -455,33 +646,56 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
 // Everyone on the PR as a token: avatar, name, then a check when they approved and a diamond when they have commits.
 function people($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
+  const all = participants(pr)
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
-      {participants(pr).map(participant => (
-        <Box key={`participant:${participant.name}`} flexDirection="row" columnGap={1}>
-          {person($, e, participant.name, participant.name === pr.viewer)}
-          {participant.role === 'author' && <Text dimColor>author</Text>}
-          {participant.hasApproved && <Text color={TONES.moss.bg}>✓ approved</Text>}
-          {participant.hasCommits && participant.role !== 'author' && <Text dimColor>◆ commits</Text>}
-        </Box>
-      ))}
+    <Box flexDirection="column" rowGap="sm">
+      {sectionTitle($, e, 'People')}
+      {slab($, e, {
+        children: (
+          <Box flexDirection="row" flexWrap="wrap" columnGap="lg" rowGap="sm">
+            {all.map(participant => (
+              <Box key={`participant:${participant.name}`} flexDirection="row" columnGap="sm" alignItems="center">
+                {person($, e, participant.name, participant.name === pr.viewer)}
+                {participant.role === 'author' && <Text dimColor>author</Text>}
+                {participant.hasApproved && <Text color={TONES.moss.bg}>✓ approved</Text>}
+                {participant.hasCommits && participant.role !== 'author' && <Text dimColor>◆ commits</Text>}
+              </Box>
+            ))}
+          </Box>
+        ),
+      })}
     </Box>
   )
 }
 
-function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null, changes: readonly PrChange[], summary: PrSummary | undefined) {
+function prView(
+  $: EngineInterface,
+  e: PaneInput,
+  followed: FollowedPr,
+  view: ThreadsView | null,
+  changes: readonly PrChange[],
+  summary: PrSummary | undefined,
+) {
   const { Box, Text } = $.ui.resolve(e)
   const pr = followed.snapshot
 
   return (
-    <Box flexDirection="column" rowGap={1}>
+    <Box flexDirection="column" rowGap="lg">
       {view && changesBlock($, e, view, changes)}
-      {pr === null && followed.error === null && <Text dimColor>Loading…</Text>}
-      {followed.error !== null && <Text color={TONES.signal.bg}>Could not read it: {followed.error}</Text>}
+      {pr === null && followed.error === null && loadingCard($, e, followed.ref)}
+      {followed.error !== null &&
+        slab($, e, {
+          rail: TONES.signal.bg,
+          wash: tint(TONES.signal),
+          children: (
+            <Text color={TONES.signal.bg} wrap="wrap">
+              Could not read it: {followed.error}
+            </Text>
+          ),
+        })}
       {pr && prCard($, e, pr, summary)}
-      {pr && nextStepLines($, e, pr)}
-      {pr && peerActions($, e, followed.ref, pr)}
+      {pr && nextBlock($, e, followed.ref, pr)}
       {pr && people($, e, pr)}
       {view && threadList($, e, view)}
     </Box>
@@ -521,8 +735,29 @@ async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot): 
   return { ref, pr, triage, drafts, openDetails }
 }
 
+// No PR followed yet: what the pane is for and where its PRs come from.
+function emptyState($: EngineInterface, e: PaneInput) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return (
+    <Box flexDirection="column" rowGap="md" borderStyle="dashed" borderColor="subtle" paddingX="md" paddingY="md">
+      <Text size="heading" weight="semibold">
+        Nothing to babysit yet
+      </Text>
+      <Text dimColor wrap="wrap">
+        No PR yet. The PRs and MRs this session opens or mentions show up here, or follow one by hand above.
+      </Text>
+      <Box flexDirection="column" rowGap="xs">
+        <Text dimColor>◌ CI, approvals and the size of the change</Text>
+        <Text dimColor>◌ the threads that wait on you, triaged</Text>
+        <Text dimColor>◌ what changed since your last look</Text>
+      </Box>
+    </Box>
+  )
+}
+
 export async function drawPane($: EngineInterface, e: PaneInput) {
-  const { Box, Input, Text } = $.ui.resolve(e)
+  const { Box, Input } = $.ui.resolve(e)
   const { prs, selectedIndex } = await readFollowedPrs($)
   const watches = await readWatches($)
   const shown = prs[selectedIndex]
@@ -536,10 +771,16 @@ export async function drawPane($: EngineInterface, e: PaneInput) {
   const summary = shown ? await readPrSummary($, shown.ref) : undefined
 
   return (
-    <Box flexDirection="column" rowGap={1} width="100%">
-      {shown ? switcher($, e, prs, selectedIndex, watches) : <Text dimColor>No PR yet. The PRs and MRs this session opens or mentions show up here.</Text>}
+    <Box flexDirection="column" rowGap="lg" width="100%">
+      {slab($, e, {
+        gap: 'sm',
+        children: [
+          <Input key="add" placeholder="Follow a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />,
+          shown && switcher($, e, prs, selectedIndex, watches),
+        ],
+      })}
+      {!shown && emptyState($, e)}
       {shown && prView($, e, shown, view, changes, summary)}
-      <Input key="add" placeholder="Add a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />
     </Box>
   )
 }

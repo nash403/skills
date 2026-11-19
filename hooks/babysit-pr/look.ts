@@ -69,3 +69,34 @@ export function avatarTone(name: string): Tone {
 
   return { bg: AVATAR_COLORS[hash % AVATAR_COLORS.length] ?? TONES.slate.bg, fg: LIGHT_INK }
 }
+
+const DIFF_BLOCKS = 5
+
+// GitHub's five-block diffstat: added and removed shares of the changed lines, at least one block for each side
+// that has lines, the gray rest when nothing changed.
+export function diffBlocks(additions: number, deletions: number) {
+  const total = additions + deletions
+
+  if (total === 0) {
+    return { added: 0, removed: 0, neutral: DIFF_BLOCKS }
+  }
+
+  const share = Math.round((DIFF_BLOCKS * additions) / total)
+  const added = Math.min(Math.max(share, additions > 0 ? 1 : 0), deletions > 0 ? DIFF_BLOCKS - 1 : DIFF_BLOCKS)
+
+  return { added, removed: DIFF_BLOCKS - added, neutral: 0 }
+}
+
+// The same shares as a rounded bar, for the surfaces that draw an Svg.
+export function diffBarSvg(additions: number, deletions: number, width: number, height: number) {
+  const total = additions + deletions
+  const added = total === 0 ? 0 : Math.round((width * additions) / total)
+  const rest = total === 0 ? TONES.slate.bg : TONES.signal.bg
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<clipPath id="pill"><rect width="${width}" height="${height}" rx="${height / 2}"/></clipPath>`,
+    `<g clip-path="url(#pill)"><rect width="${width}" height="${height}" fill="${rest}"/>`,
+    `<rect width="${added}" height="${height}" fill="${TONES.moss.bg}"/></g></svg>`,
+  ].join('')
+}

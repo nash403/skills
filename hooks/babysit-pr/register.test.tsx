@@ -264,9 +264,9 @@ test('the PR of the branch and the PRs the session shows fill the pane, read onl
     expect((await ui.find({ type: 'Text', text: /^blocked/ }))?.text).toBe('blocked: approvals')
     expect((await ui.find({ type: 'Text', text: /^skip CI$/ }))?.text).toBe('skip CI')
     expect((await ui.find({ type: 'Text', text: /^\+/ }))?.text).toBe('+40')
-    expect((await ui.find({ type: 'Text', text: /files/ }))?.text).toBe('2 files')
-    expect((await ui.find({ type: 'Text', text: /commits/ }))?.text).toBe('2 commits')
-    expect((await ui.find({ type: 'Text', text: /^threads/ }))?.text).toBe('threads 1/2 open')
+    expect((await ui.find({ key: 'stat:files' }))?.text).toBe('2files')
+    expect((await ui.find({ key: 'stat:commits' }))?.text).toBe('2commits')
+    expect((await ui.find({ key: 'stat:threads' }))?.text).toBe('💬 1/2open')
     expect((await ui.find({ type: 'Text', text: /^bob/ }))?.text).toBe('bob')
     expect((await ui.find({ type: 'Text', text: /approved$/ }))?.text).toBe('✓ approved')
     expect((await ui.find({ type: 'Text', text: /^◆ commits$/ }))?.text).toBe('◆ commits')
@@ -561,7 +561,7 @@ test('a PR past the 100 commits the query reads says 100+', async ($, on) => {
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect((await ui.find({ type: 'Text', text: /commits/ }))?.text).toBe('100+ commits')
+    expect((await ui.find({ key: 'stat:commits' }))?.text).toBe('100+commits')
     await ui.unmount()
   }
 })
@@ -752,7 +752,7 @@ test('Reply asks the agent for a draft, which shows under its thread, and asking
 
     const answer = await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
     expect(answer).toMatchObject({ result: 'The draft reply is under thread mine in the /babysit-pr pane. The user posts or discards it from there.' })
-    expect((await ui.find({ key: 'mine' }))?.text).toContain(`Draft reply${DRAFT}`)
+    expect((await ui.find({ key: 'mine' }))?.text).toContain(`DRAFT REPLY${DRAFT}`)
     expect(await ui.find({ key: 'post:mine' })).toBeDefined()
     expect(await ui.find({ key: 'post:waiting' })).toBeUndefined()
 
@@ -781,7 +781,7 @@ test('Post sends the draft as a reply in its thread, then clears it, notes it an
     expect(writes.map(({ argv }) => argv)).toEqual([['gh', 'api', 'graphql', '--hostname', 'github.com', '--input', '-']])
     expect(JSON.parse(writes[0]?.stdin ?? '')).toMatchObject({ variables: { id: 'mine', body: DRAFT } })
     expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
-    expect((await ui.find({ key: 'mine' }))?.text).not.toContain('Draft reply')
+    expect((await ui.find({ key: 'mine' }))?.text).not.toContain('DRAFT REPLY')
     expect(notesOf(session).at(-1)).toBe(
       `The user posted your draft reply in review thread mine on acme/app#12 from the /babysit-pr pane. Don't post it again. It reads:\n\n${DRAFT}`,
     )
@@ -807,7 +807,7 @@ test("a failed Post shows the platform's reason and keeps the draft, with no not
 
     await ui.press({ key: 'post:mine' })
     expect(toasts.at(-1)).toBe('Could not post the reply: Resource not accessible by integration')
-    expect((await ui.find({ key: 'mine' }))?.text).toContain(`Draft reply${DRAFT}`)
+    expect((await ui.find({ key: 'mine' }))?.text).toContain(`DRAFT REPLY${DRAFT}`)
     expect(await ui.find({ key: 'post:mine' })).toBeDefined()
     expect(notesOf(session)).toHaveLength(notesBefore)
     expect(readCalls(calls)).toEqual([])
