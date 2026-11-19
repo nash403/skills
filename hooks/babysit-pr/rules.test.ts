@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { PrSnapshot, PrThread } from '../../types'
+import type { PrHead, PrSnapshot, PrThread } from '../../types'
 import {
   ciState,
   githubBlockedReason,
@@ -37,6 +37,8 @@ const OPEN_PR: PrSnapshot = {
     { sha: 'c2', author: 'ana', committedAt: '2026-11-12T10:00:00Z' },
   ],
   threads: [],
+  heads: [],
+  lastViewerActivity: null,
   hasMoreThreads: false,
   hasMoreCommits: false,
 }
@@ -47,7 +49,7 @@ function thread(id: string, isResolved: boolean, ...comments: [author: string, c
     isResolved,
     path: 'src/export.ts',
     line: 3,
-    comments: comments.map(([author, createdAt]) => ({ author, createdAt, body: 'Why?', url: `https://x/${id}` })),
+    comments: comments.map(([author, createdAt]) => ({ author, createdAt, body: 'Why?', url: `https://x/${id}`, headSha: null })),
   }
 }
 
@@ -116,16 +118,49 @@ test('the status chip takes the first state that matches', () => {
 test('a peer PR warns when code was pushed after my approval', () => {
   const peerPr = { ...OPEN_PR, viewer: 'bob' }
 
-  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', sha: 'c1' }] })).toBe(true)
-  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', sha: 'c2' }] })).toBe(false)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', sha: 'c1', reviewId: 1, approvedAt: null }] })).toBe(true)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', sha: 'c2', reviewId: 1, approvedAt: null }] })).toBe(false)
   expect(
     isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', approvedAt: '2026-11-11T10:00:00Z' }] }),
   ).toBe(true)
   expect(
     isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'bob', approvedAt: '2026-11-12T12:00:00+01:00' }] }),
   ).toBe(false)
-  expect(isPushedSinceApproval({ ...OPEN_PR, approvals: [{ user: 'ana', sha: 'c1' }] })).toBe(false)
-  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'cid', sha: 'c1' }] })).toBe(false)
+  expect(isPushedSinceApproval({ ...OPEN_PR, approvals: [{ user: 'ana', sha: 'c1', reviewId: 1, approvedAt: null }] })).toBe(false)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ user: 'cid', sha: 'c1', reviewId: 1, approvedAt: null }] })).toBe(false)
+})
+
+// c1 then c2, each on its own day: the patch-id says whether the push to c2 changed the code.
+function heads(c2PatchId: string, pushedAt: [string, string] | null = null): PrHead[] {
+  return [
+    { sha: 'c1', pushedAt: pushedAt?.[0] ?? null, patchId: 'p1' },
+    { sha: 'c2', pushedAt: pushedAt?.[1] ?? null, patchId: c2PatchId },
+  ]
+}
+
+const VERSION_TIMES: [string, string] = ['2026-11-10T10:00:00Z', '2026-11-12T10:00:00Z']
+
+test('the updated chip goes by the last code push, so a rebase after the last comment leaves it out', () => {
+  const commentOnC1 = { ...thread('t1', false, ['bob', '2026-11-11T10:00:00Z']) }
+  commentOnC1.comments = commentOnC1.comments.map(comment => ({ ...comment, headSha: 'c1' }))
+
+  expect(statusChip({ ...OPEN_PR, threads: [commentOnC1], heads: heads('p1') })).toBe('reviewed')
+  expect(statusChip({ ...OPEN_PR, threads: [commentOnC1], heads: heads('p2') })).toBe('updated')
+  expect(statusChip({ ...OPEN_PR, threads: [thread('t2', false, ['bob', '2026-11-11T10:00:00Z'])], heads: heads('p1', VERSION_TIMES) })).toBe(
+    'reviewed',
+  )
+})
+
+test('pushed since my approval ignores a rebase, on GitHub and on GitLab', () => {
+  const peerPr = { ...OPEN_PR, viewer: 'bob' }
+  const githubApproval = { user: 'bob', sha: 'c1', reviewId: 1, approvedAt: null }
+  const gitlabApproval = { user: 'bob', approvedAt: '2026-11-11T10:00:00Z' }
+
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [githubApproval], heads: heads('p1') })).toBe(false)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [githubApproval], heads: heads('p2') })).toBe(true)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [gitlabApproval], heads: heads('p1', VERSION_TIMES) })).toBe(false)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [gitlabApproval], heads: heads('p2', VERSION_TIMES) })).toBe(true)
+  expect(isPushedSinceApproval({ ...peerPr, approvals: [{ ...githubApproval, sha: null, approvedAt: '2026-11-13T10:00:00Z' }] })).toBe(false)
 })
 
 test('threads count open over total', () => {
@@ -138,7 +173,7 @@ test('participants list the author then the reviewers, with approvals and commit
   const pr: PrSnapshot = {
     ...OPEN_PR,
     reviewers: ['bob', 'ana'],
-    approvals: [{ user: 'bob', sha: 'c2' }],
+    approvals: [{ user: 'bob', sha: 'c2', reviewId: 1, approvedAt: null }],
     commits: [...OPEN_PR.commits, { sha: 'c3', author: 'bob', committedAt: '2026-11-12T11:00:00Z' }],
     threads: [thread('t1', false, ['cid', 'x'], ['ana', 'y'])],
   }

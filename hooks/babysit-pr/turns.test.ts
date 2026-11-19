@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { PrSnapshot, PrThread } from '../../types'
+import type { PrHead, PrSnapshot, PrThread } from '../../types'
 import { concerningThreads, excerpt, isMentioned, nextSteps } from './turns'
 
 // Ana's PR, head committed on the 12th at 10:00. Bob and Cid review it.
@@ -29,6 +29,8 @@ const ANA_PR: PrSnapshot = {
     { sha: 'c2', author: 'ana', committedAt: '2026-11-12T10:00:00Z' },
   ],
   threads: [],
+  heads: [],
+  lastViewerActivity: null,
   hasMoreThreads: false,
   hasMoreCommits: false,
 }
@@ -49,6 +51,7 @@ function thread(id: string, ...messages: Message[]): PrThread {
       createdAt: `2026-11-${String(day).padStart(2, '0')}T09:00:00Z`,
       body,
       url: `https://github.com/acme/app/pull/12#discussion_r${id}${index}`,
+      headSha: null,
     })),
   }
 }
@@ -156,8 +159,8 @@ test('on my PR the next step puts my turn first, then what waits on reviewers', 
 test('on my PR with no open thread the reviewers have to review or approve', () => {
   expect(steps(ANA_PR)).toEqual(['Reviewers: not reviewed yet'])
   expect(steps({ ...ANA_PR, threads: [resolved(thread('a', ['bob', 10]))] })).toEqual(['Reviewers: approve, no open thread'])
-  expect(steps({ ...ANA_PR, approvals: [{ user: 'bob', sha: 'c1' }] })).toEqual(['Reviewers: approve, no open thread'])
-  expect(steps({ ...ANA_PR, isApproved: true, approvals: [{ user: 'bob', sha: 'c2' }] })).toEqual([])
+  expect(steps({ ...ANA_PR, approvals: [{ user: 'bob', sha: 'c1', reviewId: 1, approvedAt: null }] })).toEqual(['Reviewers: approve, no open thread'])
+  expect(steps({ ...ANA_PR, isApproved: true, approvals: [{ user: 'bob', sha: 'c2', reviewId: 1, approvedAt: null }] })).toEqual([])
 })
 
 test("on a peer's PR the next step puts my turn first, then what waits on the author", () => {
@@ -190,8 +193,8 @@ test("on a peer's PR I approve once my threads are resolved, and review again af
   expect(steps({ ...AS_BOB, threads: [myResolvedThread, thread('x', ['cid', 13])] })).toEqual([
     'You: ready to approve, all your threads resolved',
   ])
-  expect(steps({ ...AS_BOB, threads: [myResolvedThread], approvals: [{ user: 'bob', sha: 'c2' }] })).toEqual([])
-  expect(steps({ ...AS_BOB, approvals: [{ user: 'bob', sha: 'c1' }] })).toEqual(['You: code pushed since your review'])
+  expect(steps({ ...AS_BOB, threads: [myResolvedThread], approvals: [{ user: 'bob', sha: 'c2', reviewId: 1, approvedAt: null }] })).toEqual([])
+  expect(steps({ ...AS_BOB, approvals: [{ user: 'bob', sha: 'c1', reviewId: 1, approvedAt: null }] })).toEqual(['You: code pushed since your review'])
 })
 
 test('a merged or closed PR has no next step', () => {
@@ -216,8 +219,38 @@ test("on a peer's PR my review without a thread waits on the author, then on me 
     submittedAt: `2026-11-${day}T09:00:00Z`,
   })
 
-  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 13)] })).toEqual(['Author: address your review'])
-  expect(steps({ ...AS_BOB, reviews: [review('commented', 13)] })).toEqual(['You: ready to approve'])
-  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 11)] })).toEqual(['You: code pushed since your review'])
+  const reviewedOn = (day: number) => ({ at: `2026-11-${day}T09:00:00Z`, headSha: null })
+
+  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 13)], lastViewerActivity: reviewedOn(13) })).toEqual(['Author: address your review'])
+  expect(steps({ ...AS_BOB, reviews: [review('commented', 13)], lastViewerActivity: reviewedOn(13) })).toEqual(['You: ready to approve'])
+  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 11)], lastViewerActivity: reviewedOn(11) })).toEqual([
+    'You: code pushed since your review',
+  ])
   expect(steps({ ...AS_BOB, reviews: [{ ...review('commented', 13), author: 'cid' }] })).toEqual(['You: not reviewed yet'])
+})
+
+// GitLab MR versions: c1 pushed on the 10th, c2 on the 12th. The patch-id says whether c2 changed the code.
+function versions(c2PatchId: string): PrHead[] {
+  return [
+    { sha: 'c1', pushedAt: '2026-11-10T10:00:00Z', patchId: 'p1' },
+    { sha: 'c2', pushedAt: '2026-11-12T10:00:00Z', patchId: c2PatchId },
+  ]
+}
+
+test("on a peer's GitLab MR my requested changes wait on the author after a rebase, and on me after a code push", () => {
+  const requested = { ...AS_BOB, reviews: [{ author: 'bob', state: 'changes-requested', submittedAt: null } as const] }
+  const reviewedOn11 = { at: '2026-11-11T09:00:00Z', headSha: null }
+
+  expect(steps({ ...requested, lastViewerActivity: reviewedOn11, heads: versions('p1') })).toEqual(['Author: address your review'])
+  expect(steps({ ...requested, lastViewerActivity: reviewedOn11, heads: versions('p2') })).toEqual(['You: code pushed since your review'])
+})
+
+test("on a peer's PR a thread is my turn again after a code push, not after a rebase", () => {
+  const onC1 = thread('t', ['bob', 11])
+  onC1.comments = onC1.comments.map(comment => ({ ...comment, headSha: 'c1' }))
+  const githubHeads = (c2PatchId: string): PrHead[] => versions(c2PatchId).map(head => ({ ...head, pushedAt: null }))
+
+  expect(turns({ ...AS_BOB, threads: [onC1], heads: githubHeads('p1') })).toEqual([['t', 'theirs']])
+  expect(turns({ ...AS_BOB, threads: [onC1], heads: githubHeads('p2') })).toEqual([['t', 'pushed']])
+  expect(turns({ ...AS_BOB, threads: [thread('t', ['bob', 11])], heads: versions('p1') })).toEqual([['t', 'theirs']])
 })

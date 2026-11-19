@@ -1,4 +1,5 @@
-import type { PrReview, PrSnapshot, PrState } from '../../types'
+import type { PrHead, PrReview, PrSnapshot, PrState, ReviewPoint } from '../../types'
+import { newestPoint } from './pushes'
 import { ciState, gitlabBlockedReason } from './rules'
 import type { JobOutcome } from './rules'
 
@@ -77,6 +78,10 @@ type GitlabAnswer = {
   errors?: { message: string }[]
 }
 
+type GitlabVersion = { head_commit_sha: string; created_at: string; patch_id_sha: string | null }
+
+type GitlabNote = GitlabMr['discussions']['nodes'][number]['notes']['nodes'][number]
+
 type GitlabApprovals = { approved_by?: { user: { username: string }; approved_at?: string }[] }
 
 const STATES: Record<GitlabMr['state'], PrState> = { opened: 'open', locked: 'open', closed: 'closed', merged: 'merged' }
@@ -136,6 +141,17 @@ function usernameOf(user: Username) {
   return user?.username ?? 'ghost'
 }
 
+// A GitLab review leaves no time of its own: approvals and change requests only show as system notes.
+const REVIEW_SYSTEM_NOTE = /^(approved this merge request|requested changes)/
+
+// Any note of the viewer's, threads or not, plus the system notes of their approvals and change requests.
+function lastViewerActivity(mr: GitlabMr, viewer: string): ReviewPoint | null {
+  const isViewerReview = (note: GitlabNote) => usernameOf(note.author) === viewer && (!note.system || REVIEW_SYSTEM_NOTE.test(note.body))
+  const notes = mr.discussions.nodes.flatMap(discussion => discussion.notes.nodes.filter(isViewerReview))
+
+  return newestPoint(notes.map(note => ({ at: note.createdAt, headSha: null })))
+}
+
 export function parseGitlabMr(answer: unknown): PrSnapshot {
   const { data, errors } = answer as GitlabAnswer
   const mr = data?.project?.mergeRequest
@@ -182,9 +198,11 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
           isResolved: discussion.resolved,
           path: notes[0]?.position?.filePath ?? null,
           line: notes[0]?.position?.newLine ?? null,
-          comments: notes.map(note => ({ author: usernameOf(note.author), createdAt: note.createdAt, body: note.body, url: note.url })),
+          comments: notes.map(note => ({ author: usernameOf(note.author), createdAt: note.createdAt, body: note.body, url: note.url, headSha: null })),
         }
       }),
+    heads: [],
+    lastViewerActivity: lastViewerActivity(mr, data.currentUser.username),
     hasMoreThreads: mr.discussions.pageInfo.hasNextPage,
     hasMoreCommits: (mr.commitCount ?? 0) > mr.commits.nodes.length,
   }
@@ -195,4 +213,15 @@ export function parseGitlabApprovalTimes(answer: unknown): Record<string, string
   const { approved_by = [] } = answer as GitlabApprovals
 
   return Object.fromEntries(approved_by.flatMap(({ user, approved_at }) => (approved_at ? [[user.username, approved_at]] : [])))
+}
+
+// One MR version per push, newest first in GitLab's answer.
+export function parseGitlabVersions(answer: unknown): PrHead[] {
+  if (!Array.isArray(answer)) {
+    return []
+  }
+
+  return (answer as GitlabVersion[])
+    .map(version => ({ sha: version.head_commit_sha, pushedAt: version.created_at, patchId: version.patch_id_sha }))
+    .reverse()
 }

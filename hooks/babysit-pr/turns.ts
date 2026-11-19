@@ -1,5 +1,6 @@
 import type { PrComment, PrSnapshot, PrThread } from '../../types'
-import { headCommittedAt, isPushedSinceApproval } from './rules'
+import { commentPoint, isCodePushedSince, lastViewerComment, viewerApproval } from './pushes'
+import { isPushedSinceApproval } from './rules'
 
 // Whose turn an unresolved thread is. On the viewer's PR: `reply` or `theirs` (the reviewers').
 // On a peer's PR: `author-replied`, `mentioned` or `pushed` since the viewer's last message, else `theirs` (the author's).
@@ -47,13 +48,13 @@ function concernsViewer(pr: PrSnapshot, thread: PrThread) {
 }
 
 function peerThreadTurn(pr: PrSnapshot, thread: PrThread): ThreadTurn {
-  const viewerTimes = thread.comments.filter(comment => comment.author === pr.viewer).map(postedAt)
+  const lastViewerMessage = lastViewerComment(pr, thread.comments)
 
-  if (viewerTimes.length === 0) {
+  if (lastViewerMessage === undefined) {
     return 'mentioned'
   }
 
-  const lastViewerAt = Math.max(...viewerTimes)
+  const lastViewerAt = postedAt(lastViewerMessage)
   const laterComments = thread.comments.filter(comment => postedAt(comment) > lastViewerAt)
 
   if (laterComments.some(comment => comment.author === pr.author)) {
@@ -64,9 +65,7 @@ function peerThreadTurn(pr: PrSnapshot, thread: PrThread): ThreadTurn {
     return 'mentioned'
   }
 
-  const committedAt = headCommittedAt(pr)
-
-  return committedAt !== null && committedAt > lastViewerAt ? 'pushed' : 'theirs'
+  return isCodePushedSince(pr, commentPoint(lastViewerMessage)) ? 'pushed' : 'theirs'
 }
 
 function threadTurn(pr: PrSnapshot, thread: PrThread): ThreadTurn {
@@ -133,13 +132,12 @@ function lastViewerReview(pr: PrSnapshot) {
 function settledPeerStep(pr: PrSnapshot): NextStep {
   const hasViewerThreads = pr.threads.some(thread => concernsViewer(pr, thread))
   const review = lastViewerReview(pr)
-  const committedAt = headCommittedAt(pr)
 
   if (!review && !hasViewerThreads) {
     return { actor: 'You', action: 'not reviewed yet' }
   }
 
-  if (review?.submittedAt && committedAt !== null && committedAt > Date.parse(review.submittedAt)) {
+  if (pr.lastViewerActivity && isCodePushedSince(pr, pr.lastViewerActivity)) {
     return { actor: 'You', action: 'code pushed since your review' }
   }
 
@@ -159,7 +157,7 @@ function peerPrSteps(pr: PrSnapshot): NextStep[] {
   const authorReplied = countTurns(concerning, 'author-replied')
   const mentioned = countTurns(concerning, 'mentioned')
   const unanswered = countTurns(concerning, 'theirs')
-  const hasViewerApproved = pr.approvals.some(approval => approval.user === pr.viewer)
+  const hasViewerApproved = viewerApproval(pr) !== undefined
   const steps: NextStep[] = []
 
   if (authorReplied > 0) {

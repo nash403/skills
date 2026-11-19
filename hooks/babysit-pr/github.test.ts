@@ -77,8 +77,8 @@ const ANSWER = {
               line: 4,
               comments: {
                 nodes: [
-                  { id: 'PRRC_1', databaseId: 11, author: { login: 'bob' }, createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url: 'https://github.com/acme/app/pull/12#discussion_r11' },
-                  { id: 'PRRC_2', databaseId: 12, author: null, createdAt: '2026-11-11T12:00:00Z', body: 'Because.', url: 'https://github.com/acme/app/pull/12#discussion_r12' },
+                  { id: 'PRRC_1', databaseId: 11, author: { login: 'bob' }, createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url: 'https://github.com/acme/app/pull/12#discussion_r11', pullRequestReview: { commit: { oid: 'c1' } } },
+                  { id: 'PRRC_2', databaseId: 12, author: null, createdAt: '2026-11-11T12:00:00Z', body: 'Because.', url: 'https://github.com/acme/app/pull/12#discussion_r12', pullRequestReview: null },
                 ],
               },
             },
@@ -111,7 +111,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
     ci: 'pending',
     blocked: 'approvals',
     reviewers: ['cid', 'bob', 'dee'],
-    approvals: [{ user: 'bob', sha: 'c1' }],
+    approvals: [{ user: 'bob', reviewId: 2, sha: 'c1', approvedAt: '2026-11-11T09:00:00Z' }],
     reviews: [
       { author: 'bob', state: 'commented', submittedAt: '2026-11-10T09:00:00Z' },
       { author: 'ana', state: 'commented', submittedAt: '2026-11-11T12:00:00Z' },
@@ -128,12 +128,14 @@ test('a GitHub answer reads as a PR snapshot', () => {
         path: 'src/export.ts',
         line: 4,
         comments: [
-          { author: 'bob', createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url: 'https://github.com/acme/app/pull/12#discussion_r11' },
-          { author: 'ghost', createdAt: '2026-11-11T12:00:00Z', body: 'Because.', url: 'https://github.com/acme/app/pull/12#discussion_r12' },
+          { author: 'bob', createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url: 'https://github.com/acme/app/pull/12#discussion_r11', headSha: 'c1' },
+          { author: 'ghost', createdAt: '2026-11-11T12:00:00Z', body: 'Because.', url: 'https://github.com/acme/app/pull/12#discussion_r12', headSha: null },
         ],
       },
       { id: 'PRRT_2', isResolved: true, path: 'README.md', line: null, comments: [] },
     ],
+    heads: [],
+    lastViewerActivity: { at: '2026-11-11T09:00:00Z', headSha: 'c1' },
     hasMoreThreads: true,
     hasMoreCommits: false,
   })
@@ -167,4 +169,20 @@ test('a GitHub PR with more commits than the query reads says so', () => {
   answer.data.repository.pullRequest.commits.totalCount = 101
 
   expect(parseGithubPr(answer)).toMatchObject({ hasMoreCommits: true })
+})
+
+test("the viewer's last activity on GitHub is their newest review or comment, with the head it was on", () => {
+  const answer = structuredClone(ANSWER)
+  const pr = answer.data.repository.pullRequest
+  pr.reviews.nodes.push({ databaseId: 7, author: { login: 'bob' }, state: 'COMMENTED', submittedAt: '2026-11-12T09:00:00Z', commit: { oid: 'c2' } })
+
+  expect(parseGithubPr(answer).lastViewerActivity).toEqual({ at: '2026-11-12T09:00:00Z', headSha: 'c2' })
+  expect(parseGithubPr({ ...answer, data: { ...answer.data, viewer: { login: 'eve' } } }).lastViewerActivity).toBeNull()
+})
+
+test('a GitHub approval whose commit is gone keeps its review id, to dismiss it, and its time', () => {
+  const answer = structuredClone(ANSWER)
+  Object.assign(answer.data.repository.pullRequest.latestOpinionatedReviews.nodes[0]!, { commit: null })
+
+  expect(parseGithubPr(answer).approvals).toEqual([{ user: 'bob', reviewId: 2, sha: null, approvedAt: '2026-11-11T09:00:00Z' }])
 })

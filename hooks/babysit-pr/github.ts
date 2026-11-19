@@ -1,4 +1,5 @@
-import type { PrReview, PrSnapshot, PrState } from '../../types'
+import type { PrReview, PrSnapshot, PrState, ReviewPoint } from '../../types'
+import { newestPoint } from './pushes'
 import { ciState, githubBlockedReason } from './rules'
 import type { JobOutcome } from './rules'
 
@@ -13,7 +14,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
       additions deletions changedFiles
       mergeStateStatus reviewDecision
       reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } ... on Team { slug } } } }
-      latestOpinionatedReviews(first: 20) { nodes { author { login } state submittedAt commit { oid } } }
+      latestOpinionatedReviews(first: 20) { nodes { databaseId author { login } state submittedAt commit { oid } } }
       reviews(last: 50) { nodes { author { login } state submittedAt commit { oid } } }
       commits(last: 100) {
         totalCount
@@ -32,7 +33,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
         totalCount
         nodes {
           id isResolved path line
-          comments(first: 100) { nodes { author { login } createdAt body url } }
+          comments(first: 100) { nodes { author { login } createdAt body url pullRequestReview { commit { oid } } } }
         }
       }
     }
@@ -41,7 +42,10 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
 
 type Login = { login: string } | null
 
-type Review = { author: Login; state: string; submittedAt: string | null; commit: { oid: string } | null }
+type Review = { databaseId: number; author: Login; state: string; submittedAt: string | null; commit: { oid: string } | null }
+
+// The review a comment was submitted in: its commit is the head the comment was written on.
+type CommentReview = { commit: { oid: string } | null } | null
 
 type CheckContext =
   | { __typename: 'CheckRun'; status: string; conclusion: string | null }
@@ -78,7 +82,7 @@ type GithubPr = {
       isResolved: boolean
       path: string | null
       line: number | null
-      comments: { nodes: { author: Login; createdAt: string; body: string; url: string }[] }
+      comments: { nodes: { author: Login; createdAt: string; body: string; url: string; pullRequestReview?: CommentReview }[] }
     }[]
   }
 }
@@ -147,6 +151,22 @@ function reviewersOf(pr: GithubPr, author: string) {
   return [...new Set([...requested, ...reviewed])].filter(name => name !== author)
 }
 
+// Every reply in a thread is a review too, so reviews and comments both count.
+function lastViewerActivity(pr: GithubPr, viewer: string) {
+  const reviews = [...pr.reviews.nodes, ...pr.latestOpinionatedReviews.nodes].flatMap(review =>
+    loginOf(review.author) === viewer && review.state !== 'PENDING' && review.submittedAt
+      ? [{ at: review.submittedAt, headSha: review.commit?.oid ?? null }]
+      : [],
+  )
+  const comments = pr.reviewThreads.nodes.flatMap(thread =>
+    thread.comments.nodes.flatMap(comment =>
+      loginOf(comment.author) === viewer ? [{ at: comment.createdAt, headSha: comment.pullRequestReview?.commit?.oid ?? null }] : [],
+    ),
+  )
+
+  return newestPoint([...reviews, ...comments])
+}
+
 export function parseGithubPr(answer: unknown): PrSnapshot {
   const { data, errors } = answer as GithubAnswer
   const pr = data?.repository?.pullRequest
@@ -168,6 +188,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
       createdAt: comment.createdAt,
       body: comment.body,
       url: comment.url,
+      headSha: comment.pullRequestReview?.commit?.oid ?? null,
     })),
   }))
   const author = loginOf(pr.author)
@@ -202,7 +223,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
       .map(review => {
         const user = loginOf(review.author)
 
-        return review.commit ? { user, sha: review.commit.oid } : { user, approvedAt: review.submittedAt }
+        return { user, reviewId: review.databaseId, sha: review.commit?.oid ?? null, approvedAt: review.submittedAt }
       }),
     reviews: submittedReviews(pr),
     commits: pr.commits.nodes.map(({ commit }) => {
@@ -215,6 +236,8 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
       }
     }),
     threads,
+    heads: [],
+    lastViewerActivity: lastViewerActivity(pr, data.viewer.login),
     hasMoreThreads: pr.reviewThreads.totalCount > threads.length,
     hasMoreCommits: pr.commits.totalCount > pr.commits.nodes.length,
   }

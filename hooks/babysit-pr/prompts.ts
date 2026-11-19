@@ -85,3 +85,12 @@ export function replyPrompt({ ref, pr, thread, name }: ThreadTarget) {
     `Then call ${REPLY_DRAFT_TOOL} with the PR URL, threadId ${thread.id} and the text: the /babysit-pr pane shows it under the thread, and I post it from there. Don't post it yourself, resolve the thread or change the code.`,
   ].join('\n\n')
 }
+
+// The arguments of the pr-review skill: the PR's URL first, as the skill takes it, then how to narrow the review.
+export function reviewChangesArgs(ref: PrRef, pr: PrSnapshot, fromSha: string) {
+  return [
+    pr.url,
+    `Review only what changed on ${prPhrase(ref, pr)} since my last review: from ${fromSha}, the head I last reviewed or commented on, to ${pr.headSha}, the head now. Leave out the code that was already there at ${fromSha} and what the base branch brought in. If the branch was rebased in between, compare the two with \`git range-diff\`.`,
+    UNTRUSTED_COMMENTS,
+  ].join('\n\n')
+}

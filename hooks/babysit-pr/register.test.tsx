@@ -116,9 +116,22 @@ const GITLAB_ANSWER = {
 
 const GITLAB_APPROVALS = { approved_by: [{ user: { username: 'ana' }, approved_at: '2026-11-11T10:00:00Z' }] }
 
-// Answers gh, glab and git as a repo on github.com/acme/app whose branch has PR #12.
-function stubEngine(on: any, messages: unknown[], answers: Record<number, unknown> = {}) {
+// The MR's versions, newest first: g1 opened it, g2 changed the code after Ana's approval.
+const GITLAB_VERSIONS = [
+  { id: 2, head_commit_sha: 'g2', created_at: '2026-11-12T10:00:00.000Z', patch_id_sha: 'p2' },
+  { id: 1, head_commit_sha: 'g1', created_at: '2026-11-10T10:00:00.000Z', patch_id_sha: 'p1' },
+]
+
+// git patch-id gives the same id to the same diff, as it does across a rebase.
+function patchIdOf(diff: string) {
+  return `patch-${diff.replace(/\s+/g, '-')} 0000000000000000000000000000000000000000\n`
+}
+
+// Answers gh, glab and git as a repo on github.com/acme/app whose branch has PR #12. `diffs` is the PR's diff at a
+// head, by sha: `diff of <sha>` when left out.
+function stubEngine(on: any, messages: unknown[], answers: Record<number, unknown> = {}, diffs: Record<string, string> = {}) {
   const calls: Calls = []
+  const commands: { command: string; args: string }[] = []
   const toasts: string[] = []
   const sessionReads: string[] = []
   const tools: string[] = []
@@ -158,6 +171,11 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
 
     return { text: e.text }
   })
+  on('command.run', (_: unknown, e: { command: string; args: string }) => {
+    commands.push({ command: e.command, args: e.args })
+
+    return { text: '' }
+  })
   on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
     const argv = [...e.argv]
     calls.push({ argv })
@@ -168,12 +186,22 @@ function stubEngine(on: any, messages: unknown[], answers: Record<number, unknow
       return { value: write.answer }
     }
 
+    if (argv.join(' ') === 'git patch-id --stable') {
+      return { value: { exitCode: 0, stdout: patchIdOf(e.init?.stdin ?? ''), stderr: '' } }
+    }
+
+    const sha = argv.at(-1)?.match(/\/compare\/[^.]+\.\.\.(\w+)$/)?.[1]
+
+    if (sha !== undefined) {
+      return { value: { exitCode: 0, stdout: diffs[sha] ?? `diff of ${sha}`, stderr: '' } }
+    }
+
     const answer = answerTo(argv, answers)
 
     return { value: { exitCode: 0, stdout: typeof answer === 'string' ? answer : JSON.stringify(answer), stderr: '' } }
   })
 
-  return { calls, toasts, sessionReads, tools, prompts, writes, write, closePane: () => (openPanes = []) }
+  return { calls, commands, toasts, sessionReads, tools, prompts, writes, write, closePane: () => (openPanes = []) }
 }
 
 function answerTo(argv: string[], answers: Record<number, unknown>): unknown {
@@ -196,11 +224,21 @@ function answerTo(argv: string[], answers: Record<number, unknown>): unknown {
     return GITLAB_ANSWER
   }
 
+  if (argv.some(arg => arg.endsWith('/versions?per_page=100'))) {
+    return GITLAB_VERSIONS
+  }
+
   return argv.some(arg => arg.endsWith('/approvals')) ? GITLAB_APPROVALS : null
 }
 
+// The GraphQL reads, one per PR read.
 function platformCalls(calls: Calls) {
-  return calls.filter(({ argv }) => argv[1] === 'api').map(({ argv }) => argv.find(arg => /^(number|iid)=/.test(arg)))
+  return calls.filter(({ argv }) => argv[2] === 'graphql').map(({ argv }) => argv.find(arg => /^(number|iid)=/.test(arg)))
+}
+
+// The reads push detection makes: a GitHub diff per head, GitLab's MR versions.
+function pushReads(calls: Calls) {
+  return calls.map(({ argv }) => argv.at(-1) ?? '').filter(path => path.includes('/compare/') || path.includes('/versions'))
 }
 
 test('the PR of the branch and the PRs the session shows fill the pane, read only', async ($, on) => {
@@ -650,7 +688,7 @@ function readCalls(calls: Calls) {
   return platformCalls(calls.filter(({ argv }) => !isWrite(argv)))
 }
 
-test('Reply asks the agent for a draft, which shows under its thread, and asking again replaces it', async ($, on) => {
+test('Reply asks the agent for a draft, which shows under its thread, and asking again replaces it, with no note', async ($, on) => {
   const session = mock.session(on)
   const { prompts, writes } = await openOnTriagedPr($, on)
 
@@ -658,10 +696,12 @@ test('Reply asks the agent for a draft, which shows under its thread, and asking
     const ui = await $.ui.mount({ ...PANE, surface })
     prompts.length = 0
 
+    const notesBefore = notesOf(session).length
+
     await ui.press({ key: 'reply:mine' })
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).toContain('Draft a reply to this review thread on my PR acme/app#12')
-    expect(notesOf(session).at(-1)).toBe('From the /babysit-pr pane, the user asked you to draft a reply to review thread mine on acme/app#12.')
+    expect(notesOf(session)).toHaveLength(notesBefore)
     expect(await ui.find({ key: 'post:mine' })).toBeUndefined()
 
     const answer = await $.tool.call({ tool: DRAFT_TOOL, pr: PR_12, threadId: 'mine', body: DRAFT })
@@ -784,7 +824,7 @@ test('Resolve resolves the thread on the platform, drops its draft, notes it and
   }
 })
 
-test('Fix shows on my PR only, asks to fix the thread on its branch without committing, and notes it', async ($, on) => {
+test('Fix shows on my PR only and asks to fix the thread on its branch without committing, with no note', async ($, on) => {
   const session = mock.session(on)
   const clock = mock.clock(on)
   const { prompts } = stubEngine(on, [{ role: 'user', text: 'Review https://github.com/acme/app/pull/7', toolUses: [] }], {
@@ -816,7 +856,7 @@ test('Fix shows on my PR only, asks to fix the thread on its branch without comm
     expect(prompts[0]).toContain('Fix what this review thread raises on my PR acme/app#12')
     expect(prompts[0]).toContain("Work on the PR's branch, `feat/export`.")
     expect(prompts[0]).toContain("Don't commit")
-    expect(notesOf(session).at(-1)).toBe('From the /babysit-pr pane, the user asked you to fix review thread mine on acme/app#12.')
+    expect(notesOf(session)).toEqual([])
 
     await ui.press({ key: 'next' })
     expect((await ui.find({ type: 'Text', text: /^acme\/app#/ }))?.text).toBe('acme/app#7 ↗')
@@ -840,4 +880,190 @@ test('a draft for a thread the pane does not list, or a PR it does not follow, i
   expect(unknownThread).toMatchObject({ deny: 'PRRT_9 is not one of the open threads the /babysit-pr pane lists on acme/app#12.' })
   expect(unfollowed).toMatchObject({ deny: 'https://github.com/acme/app/pull/99 is not a PR the /babysit-pr pane follows, or it has not loaded yet.' })
   expect(calls).toEqual([])
+})
+
+const PR_7 = 'https://github.com/acme/app/pull/7'
+
+const ANA_APPROVAL = { databaseId: 77, author: { login: 'ana' }, state: 'APPROVED', submittedAt: '2026-11-11T09:00:00Z', commit: { oid: 'c2' } }
+
+// Dee's PR #7, which Ana reviews, beside Ana's own #12.
+async function openOnPeerPr($: any, on: any, peerPr: Record<string, unknown> = {}, diffs: Record<string, string> = {}) {
+  const clock = mock.clock(on)
+  const session = mock.session(on)
+  const engine = stubEngine(
+    on,
+    [{ role: 'user', text: `Review ${PR_7}`, toolUses: [] }],
+    { 7: githubAnswer(7, { author: { login: 'dee' }, latestOpinionatedReviews: { nodes: [] }, ...peerPr }) },
+    diffs,
+  )
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  return { clock, session, ...engine }
+}
+
+async function mountPeerPr($: any, surface: (typeof SURFACES)[number]) {
+  const ui = await $.ui.mount({ ...PANE, surface })
+  await ui.press({ key: 'next' })
+  expect((await ui.find({ type: 'Text', text: /^acme\/app#/ }))?.text).toBe('acme/app#7 ↗')
+
+  return ui
+}
+
+test("Approve shows on a peer's PR only, approves the head I saw, notes it and reads the PR again", async ($, on) => {
+  const { calls, session, writes } = await openOnPeerPr($, on)
+
+  for (const surface of SURFACES) {
+    const own = await $.ui.mount({ ...PANE, surface })
+    expect(await own.find({ key: 'approve' })).toBeUndefined()
+    expect(await own.find({ key: 'unapprove' })).toBeUndefined()
+    await own.unmount()
+
+    const ui = await mountPeerPr($, surface)
+    expect(await ui.find({ key: 'unapprove' })).toBeUndefined()
+    calls.length = 0
+    writes.length = 0
+
+    await ui.press({ key: 'approve' })
+    expect(writes.map(({ argv }) => argv.join(' '))).toEqual([
+      'gh api --hostname github.com -X POST repos/acme/app/pulls/7/reviews -f event=APPROVE -f commit_id=c2',
+    ])
+    expect(notesOf(session).at(-1)).toBe('The user approved acme/app#7 from the /babysit-pr pane.')
+    expect(readCalls(calls)).toEqual(['number=7'])
+    await ui.press({ key: 'previous' })
+    await ui.unmount()
+  }
+})
+
+test("Unapprove dismisses my approving review on GitHub; a failure shows the platform's reason, with no note", async ($, on) => {
+  const { calls, session, toasts, write, writes } = await openOnPeerPr($, on, { latestOpinionatedReviews: { nodes: [ANA_APPROVAL] } })
+
+  for (const surface of SURFACES) {
+    const ui = await mountPeerPr($, surface)
+    expect(await ui.find({ key: 'approve' })).toBeUndefined()
+    const notesBefore = notesOf(session).length
+    calls.length = 0
+    writes.length = 0
+
+    write.answer = { exitCode: 1, stdout: '{"message":"Must have admin rights to Repository."}', stderr: 'gh: Must have admin rights (HTTP 403)' }
+    await ui.press({ key: 'unapprove' })
+    expect(toasts.at(-1)).toBe('Could not withdraw the approval: Must have admin rights to Repository.')
+    expect(notesOf(session)).toHaveLength(notesBefore)
+    expect(readCalls(calls)).toEqual([])
+
+    write.answer = { exitCode: 0, stdout: '{"id":77,"state":"DISMISSED"}', stderr: '' }
+    await ui.press({ key: 'unapprove' })
+    expect(writes.map(({ argv }) => argv.join(' '))).toEqual([
+      'gh api --hostname github.com -X PUT repos/acme/app/pulls/7/reviews/77/dismissals -f message=Approval withdrawn. -f event=DISMISS',
+      'gh api --hostname github.com -X PUT repos/acme/app/pulls/7/reviews/77/dismissals -f message=Approval withdrawn. -f event=DISMISS',
+    ])
+    expect(notesOf(session).at(-1)).toBe('The user withdrew their approval of acme/app#7 from the /babysit-pr pane.')
+    expect(readCalls(calls)).toEqual(['number=7'])
+    await ui.press({ key: 'previous' })
+    await ui.unmount()
+  }
+})
+
+test('Unapprove revokes my approval of a GitLab MR', async ($, on) => {
+  const clock = mock.clock(on)
+  const { writes } = stubEngine(on, [{ role: 'user', text: 'https://gitlab.com/team/tools/-/merge_requests/21', toolUses: [] }])
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'next' })
+  await ui.press({ key: 'unapprove' })
+  expect(writes.map(({ argv }) => argv.join(' '))).toEqual(['glab api --hostname gitlab.com -X POST projects/team%2Ftools/merge_requests/21/unapprove'])
+  await ui.unmount()
+})
+
+// Ana commented on c1; the head is now c2.
+const COMMENTED_ON_C1 = {
+  reviewThreads: {
+    totalCount: 1,
+    nodes: [
+      {
+        id: 'asked',
+        isResolved: true,
+        path: 'src/export.ts',
+        line: 3,
+        comments: {
+          nodes: [
+            { author: { login: 'ana' }, createdAt: '2026-11-11T10:00:00Z', body: 'Why?', url: `${PR_7}#discussion_r1`, pullRequestReview: { commit: { oid: 'c1' } } },
+          ],
+        },
+      },
+    ],
+  },
+}
+
+test("Review changes shows on a peer's PR once code was pushed since my last comment, and runs pr-review on those changes only", async ($, on) => {
+  const { commands, session } = await openOnPeerPr($, on, COMMENTED_ON_C1, { c1: 'diff A', c2: 'diff B' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountPeerPr($, surface)
+    expect((await ui.findAll({ type: 'Text', text: /^→/ })).map((step: { text: string }) => step.text)).toEqual(['→ You: code pushed since your review'])
+    commands.length = 0
+
+    await ui.press({ key: 'review-changes' })
+    expect(commands).toHaveLength(1)
+    expect(commands[0]?.command).toBe('nash403-skills:pr-review')
+    expect(commands[0]?.args).toContain(`${PR_7}\n\nReview only what changed on @dee's PR acme/app#7`)
+    expect(commands[0]?.args).toContain('from c1, the head I last reviewed or commented on, to c2, the head now')
+    expect(notesOf(session)).toEqual([])
+    await ui.press({ key: 'previous' })
+    await ui.unmount()
+  }
+})
+
+test('a push that only rebased the PR shows no Review changes and no code push', async ($, on) => {
+  await openOnPeerPr($, on, COMMENTED_ON_C1, { c1: 'same diff', c2: 'same diff' })
+
+  for (const surface of SURFACES) {
+    const ui = await mountPeerPr($, surface)
+    expect(await ui.find({ key: 'review-changes' })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Text', text: /^→/ })).map((step: { text: string }) => step.text)).toEqual(['→ You: ready to approve, all your threads resolved'])
+    await ui.press({ key: 'previous' })
+    await ui.unmount()
+  }
+})
+
+test('push detection reads a diff per new head only: a refresh on the same heads reads none', async ($, on) => {
+  const answers: Record<number, unknown> = { 7: githubAnswer(7, { author: { login: 'dee' }, ...COMMENTED_ON_C1 }) }
+  const clock = mock.clock(on)
+  const { calls } = stubEngine(on, [{ role: 'user', text: `Review ${PR_7}`, toolUses: [] }], answers)
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  expect(pushReads(calls).sort()).toEqual(['repos/acme/app/compare/main...c1', 'repos/acme/app/compare/main...c2', 'repos/acme/app/compare/main...c2'])
+
+  calls.length = 0
+  await clock.advance(3 * 60_000)
+  expect(platformCalls(calls)).toEqual(['number=12', 'number=7'])
+  expect(pushReads(calls)).toEqual([])
+
+  answers[7] = githubAnswer(7, { author: { login: 'dee' }, headRefOid: 'c3', ...COMMENTED_ON_C1 })
+  calls.length = 0
+  await clock.advance(3 * 60_000)
+  expect(pushReads(calls)).toEqual(['repos/acme/app/compare/main...c3'])
+})
+
+test('GitLab versions are read again only when the head moved', async ($, on) => {
+  const clock = mock.clock(on)
+  const { calls } = stubEngine(on, [{ role: 'user', text: 'https://gitlab.com/team/tools/-/merge_requests/21', toolUses: [] }])
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  expect(pushReads(calls).filter(path => path.includes('/versions'))).toEqual(['projects/team%2Ftools/merge_requests/21/versions?per_page=100'])
+
+  calls.length = 0
+  await clock.advance(3 * 60_000)
+  expect(platformCalls(calls)).toEqual(['number=12', 'iid=21'])
+  expect(pushReads(calls).filter(path => path.includes('/versions'))).toEqual([])
 })

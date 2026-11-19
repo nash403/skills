@@ -38,7 +38,8 @@ export type CiState = 'none' | 'starting' | 'pending' | 'ok' | 'error'
 
 export type BlockedReason = 'conflicts' | 'rebase' | 'approvals' | 'threads' | 'checks' | 'blocked'
 
-export type PrComment = { author: string; createdAt: string; body: string; url: string }
+// `headSha` is the head the comment was written on: GitHub says it, GitLab doesn't.
+export type PrComment = { author: string; createdAt: string; body: string; url: string; headSha: string | null }
 
 export type PrThread = {
   id: string
@@ -48,13 +49,21 @@ export type PrThread = {
   comments: PrComment[]
 }
 
-// GitHub says which head an approval was given on; GitLab says only when, and only through its REST API.
-export type PrApproval = { user: string; sha: string } | { user: string; approvedAt: string | null }
+// GitHub names the approving review, to dismiss to withdraw it, and the head it was given on (null once that commit
+// is gone). GitLab says only when, and only through its REST API.
+export type PrApproval = { user: string; reviewId: number; sha: string | null; approvedAt: string | null } | { user: string; approvedAt: string | null }
 
 export type PrCommit = { sha: string; author: string; committedAt: string }
 
 // A submitted review. GitLab gives a reviewer's state only, with no time.
 export type PrReview = { author: string; state: 'approved' | 'changes-requested' | 'commented' | 'dismissed'; submittedAt: string | null }
+
+// A head the PR had, with the patch-id of its diff: a rebase alone keeps it. `pushedAt` is when it was pushed,
+// which only GitLab says (one MR version per push).
+export type PrHead = { sha: string; pushedAt: string | null; patchId: string | null }
+
+// When someone reviewed or commented, and the head they did it on when the platform says (GitHub).
+export type ReviewPoint = { at: string; headSha: string | null }
 
 export type PrSnapshot = {
   url: string
@@ -78,6 +87,11 @@ export type PrSnapshot = {
   reviews: PrReview[]
   commits: PrCommit[]
   threads: PrThread[]
+  // What push detection compares, read for open PRs only. GitLab: every MR version, oldest first. GitHub: the head,
+  // and the heads the rules compare it with (see `comparedHeadShas`).
+  heads: PrHead[]
+  // The viewer's last review or comment, approvals and requested changes included.
+  lastViewerActivity: ReviewPoint | null
   hasMoreThreads: boolean
   hasMoreCommits: boolean
 }

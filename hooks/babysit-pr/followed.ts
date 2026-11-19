@@ -5,7 +5,7 @@ import type { FollowedPr, PrRef, PrSnapshot } from '../../types'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
 
-const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-3' })
+const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-4' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })
@@ -54,13 +54,15 @@ const fetching = new Set<string>()
 async function refetch($: EngineInterface, refs: readonly PrRef[]) {
   const idle = refs.filter(ref => !fetching.has(prKey(ref)))
   idle.forEach(ref => fetching.add(prKey(ref)))
+  const list = await read($, followedPrs)
 
   await Promise.all(
     idle.map(async ref => {
       const key = prKey(ref)
+      const previous = list.find(pr => prKey(pr.ref) === key)?.snapshot ?? null
 
       try {
-        const snapshot = await fetchSnapshot($, ref)
+        const snapshot = await fetchSnapshot($, ref, previous)
         await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, snapshot, error: null } : pr)))
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)

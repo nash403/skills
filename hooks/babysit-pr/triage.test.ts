@@ -23,7 +23,7 @@ function thread(id: string, ...commentUrls: string[]): PrThread {
     isResolved: false,
     path: 'src/save.ts',
     line: 3,
-    comments: commentUrls.map(url => ({ author: 'bob', createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url })),
+    comments: commentUrls.map(url => ({ author: 'bob', createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url, headSha: null })),
   }
 }
 
@@ -49,6 +49,8 @@ const PR: PrSnapshot = {
   reviews: [],
   commits: [{ sha: 'c1', author: 'ana', committedAt: '2026-11-10T08:00:00Z' }],
   threads: [thread('PRRT_1', 'u1', 'u2'), thread('PRRT_2', 'u3')],
+  heads: [],
+  lastViewerActivity: null,
   hasMoreThreads: false,
   hasMoreCommits: false,
 }

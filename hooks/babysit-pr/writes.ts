@@ -1,4 +1,4 @@
-import type { PrRef } from '../../types'
+import type { PrApproval, PrRef } from '../../types'
 import { gitlabDiscussionId, gitlabMrPath } from './refs'
 
 // A write call to GitHub or GitLab. Text someone wrote goes on stdin as JSON, never in argv.
@@ -35,6 +35,32 @@ export function resolveCommand(ref: PrRef, threadId: string): WriteCommand {
   }
 
   return { argv: ['glab', 'api', '--hostname', ref.host, '-X', 'PUT', gitlabDiscussionPath(ref, threadId), '-F', 'resolved=true'] }
+}
+
+function githubPullPath(ref: PrRef) {
+  return `repos/${ref.project}/pulls/${ref.number}`
+}
+
+export function approveCommand(ref: PrRef, headSha: string): WriteCommand {
+  if (ref.platform === 'github') {
+    return { argv: ['gh', 'api', '--hostname', ref.host, '-X', 'POST', `${githubPullPath(ref)}/reviews`, '-f', 'event=APPROVE', '-f', `commit_id=${headSha}`] }
+  }
+
+  return { argv: ['glab', 'api', '--hostname', ref.host, '-X', 'POST', `${gitlabMrPath(ref)}/approve`, '-f', `sha=${headSha}`] }
+}
+
+// GitHub has no unapprove: the user's approving review is dismissed, which needs write access to the repo.
+export function unapproveCommand(ref: PrRef, approval: PrApproval): WriteCommand {
+  if ('reviewId' in approval) {
+    return {
+      argv: [
+        'gh', 'api', '--hostname', ref.host, '-X', 'PUT', `${githubPullPath(ref)}/reviews/${approval.reviewId}/dismissals`,
+        '-f', 'message=Approval withdrawn.', '-f', 'event=DISMISS',
+      ],
+    }
+  }
+
+  return { argv: ['glab', 'api', '--hostname', ref.host, '-X', 'POST', `${gitlabMrPath(ref)}/unapprove`] }
 }
 
 function parseJson(text: string): Record<string, unknown> | null {

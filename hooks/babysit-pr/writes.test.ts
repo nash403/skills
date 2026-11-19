@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { PrRef } from '../../types'
-import { replyCommand, resolveCommand, writeFailureReason } from './writes'
+import { approveCommand, replyCommand, resolveCommand, unapproveCommand, writeFailureReason } from './writes'
 
 const GITHUB_REF: PrRef = { platform: 'github', host: 'github.com', project: 'acme/app', number: 12 }
 const GITLAB_REF: PrRef = { platform: 'gitlab', host: 'gitlab.example.com', project: 'team/sub/tools', number: 21 }
@@ -45,6 +45,33 @@ test('resolving a discussion on GitLab sets it resolved through the REST API', (
       'glab', 'api', '--hostname', 'gitlab.example.com', '-X', 'PUT',
       'projects/team%2Fsub%2Ftools/merge_requests/21/discussions/a1b2', '-F', 'resolved=true',
     ],
+  })
+})
+
+test('approving on GitHub submits an approving review of the head the user saw', () => {
+  expect(approveCommand(GITHUB_REF, 'c2')).toEqual({
+    argv: ['gh', 'api', '--hostname', 'github.com', '-X', 'POST', 'repos/acme/app/pulls/12/reviews', '-f', 'event=APPROVE', '-f', 'commit_id=c2'],
+  })
+})
+
+test('approving on GitLab approves the MR at the head the user saw', () => {
+  expect(approveCommand(GITLAB_REF, 'c2')).toEqual({
+    argv: ['glab', 'api', '--hostname', 'gitlab.example.com', '-X', 'POST', 'projects/team%2Fsub%2Ftools/merge_requests/21/approve', '-f', 'sha=c2'],
+  })
+})
+
+test("unapproving on GitHub dismisses the user's own approving review", () => {
+  expect(unapproveCommand(GITHUB_REF, { user: 'bob', sha: 'c1', reviewId: 2049, approvedAt: null })).toEqual({
+    argv: [
+      'gh', 'api', '--hostname', 'github.com', '-X', 'PUT', 'repos/acme/app/pulls/12/reviews/2049/dismissals',
+      '-f', 'message=Approval withdrawn.', '-f', 'event=DISMISS',
+    ],
+  })
+})
+
+test('unapproving on GitLab revokes the approval', () => {
+  expect(unapproveCommand(GITLAB_REF, { user: 'bob', approvedAt: null })).toEqual({
+    argv: ['glab', 'api', '--hostname', 'gitlab.example.com', '-X', 'POST', 'projects/team%2Fsub%2Ftools/merge_requests/21/unapprove'],
   })
 })
 

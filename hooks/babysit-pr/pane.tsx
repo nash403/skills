@@ -1,12 +1,13 @@
 import type { Color, EngineInterface, RenderInput } from 'claude-code'
 
 import type { CiState, FollowedPr, PrRef, PrSnapshot, PrThread, PrTriage, ReplyDrafts, TriageImportance } from '../../types'
-import { askFix, askReply, discardDraft, postDraft, resolveThread } from './actions'
+import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveThread, unapprove } from './actions'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
 import { prLabel } from './refs'
+import { headToReviewFrom, viewerApproval } from './pushes'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import type { StatusChip } from './rules'
 import { feedbackTally, triageStatus } from './triage'
@@ -97,6 +98,29 @@ function stateLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
       {pr.isDraft && <Text color="inactive">draft</Text>}
       {pr.blocked && <Text color="error">blocked: {pr.blocked}</Text>}
       {isSkipCi(pr.title, pr.headMessage) && <Text color="warning">skip CI</Text>}
+    </Box>
+  )
+}
+
+// On a peer's open PR: the Approve / Unapprove toggle, and Review changes once code was pushed since the viewer's review.
+function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot) {
+  const { Box, Button } = $.ui.resolve(e)
+
+  if (pr.state !== 'open' || isViewerPr(pr)) {
+    return null
+  }
+
+  const approval = viewerApproval(pr)
+  const fromSha = headToReviewFrom(pr)
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {approval ? (
+        <Button key="unapprove" label="Unapprove" plain dimColor onPress={() => void unapprove($, ref, approval)} />
+      ) : (
+        <Button key="approve" label="Approve" variant="primary" onPress={() => void approve($, ref, pr.headSha)} />
+      )}
+      {fromSha !== null && <Button key="review-changes" label="Review changes" onPress={() => void askReviewChanges($, ref, pr, fromSha)} />}
     </Box>
   )
 }
@@ -329,6 +353,7 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: Th
       )}
       {pr && stateLine($, e, pr)}
       {pr && nextStepLines($, e, pr)}
+      {pr && peerActions($, e, followed.ref, pr)}
       {pr && countsLine($, e, pr)}
       {pr && participantRows($, e, pr)}
       {view && threadList($, e, view)}

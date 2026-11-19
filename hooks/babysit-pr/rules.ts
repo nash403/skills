@@ -1,4 +1,5 @@
 import type { BlockedReason, CiState, PrSnapshot } from '../../types'
+import { commentPoint, isCodeChangedFrom, isCodePushedSince, newestThreadComment, viewerApproval } from './pushes'
 
 export type JobOutcome = 'passed' | 'failed' | 'running' | 'waiting'
 
@@ -96,23 +97,11 @@ export function threadCounts({ threads }: PrSnapshot) {
   return { open: threads.filter(thread => !thread.isResolved).length, total: threads.length }
 }
 
-function latestCommentAt({ threads }: PrSnapshot) {
-  const times = threads.flatMap(thread => thread.comments.map(comment => Date.parse(comment.createdAt)))
-
-  return times.length > 0 ? Math.max(...times) : null
-}
-
-export function headCommittedAt(pr: PrSnapshot) {
-  const head = pr.commits.find(commit => commit.sha === pr.headSha) ?? pr.commits.at(-1)
-
-  return head ? Date.parse(head.committedAt) : null
-}
-
+// Code pushed after the newest comment, a rebase alone left out.
 function isUpdatedSinceLastComment(pr: PrSnapshot) {
-  const commentedAt = latestCommentAt(pr)
-  const committedAt = headCommittedAt(pr)
+  const comment = newestThreadComment(pr)
 
-  return commentedAt !== null && committedAt !== null && committedAt > commentedAt
+  return comment !== undefined && isCodePushedSince(pr, commentPoint(comment))
 }
 
 export function statusChip(pr: PrSnapshot): StatusChip {
@@ -137,21 +126,19 @@ export function statusChip(pr: PrSnapshot): StatusChip {
   return total > 0 ? 'resolved' : 'opened'
 }
 
-// On a peer's PR the viewer approved: is the head newer than that approval?
+// On a peer's PR the viewer approved: was code pushed since, a rebase alone left out?
 export function isPushedSinceApproval(pr: PrSnapshot) {
-  const approval = pr.approvals.find(({ user }) => user === pr.viewer)
+  const approval = viewerApproval(pr)
 
   if (pr.state !== 'open' || pr.author === pr.viewer || approval === undefined) {
     return false
   }
 
-  if ('sha' in approval) {
-    return approval.sha !== pr.headSha
+  if ('sha' in approval && approval.sha !== null) {
+    return isCodeChangedFrom(pr, approval.sha)
   }
 
-  const committedAt = headCommittedAt(pr)
-
-  return approval.approvedAt !== null && committedAt !== null && committedAt > Date.parse(approval.approvedAt)
+  return approval.approvedAt !== null && isCodePushedSince(pr, { at: approval.approvedAt, headSha: null })
 }
 
 export function participants(pr: PrSnapshot): Participant[] {

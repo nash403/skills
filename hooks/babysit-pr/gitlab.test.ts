@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parseGitlabApprovalTimes, parseGitlabMr } from './gitlab'
+import { parseGitlabApprovalTimes, parseGitlabMr, parseGitlabVersions } from './gitlab'
 
 const NOTE = { author: { username: 'bob' }, createdAt: '2026-11-10T09:00:00+01:00', system: false, position: null }
 
@@ -62,6 +62,18 @@ const ANSWER = {
               },
             },
             { id: 'gid://gitlab/Discussion/b2', resolvable: false, resolved: false, notes: { nodes: [{ ...NOTE, body: 'Nice', url: 'u' }] } },
+            {
+              id: 'gid://gitlab/Discussion/c3',
+              resolvable: false,
+              resolved: false,
+              notes: { nodes: [{ ...NOTE, system: true, createdAt: '2026-11-11T10:00:00Z', body: 'approved this merge request', url: 'u' }] },
+            },
+            {
+              id: 'gid://gitlab/Discussion/d4',
+              resolvable: false,
+              resolved: false,
+              notes: { nodes: [{ ...NOTE, system: true, createdAt: '2026-11-12T10:00:00Z', body: 'requested review from @cid', url: 'u' }] },
+            },
           ],
         },
       },
@@ -101,10 +113,12 @@ test('a GitLab answer reads as a PR snapshot', () => {
         path: 'src/export.ts',
         line: 4,
         comments: [
-          { author: 'bob', createdAt: '2026-11-10T09:00:00+01:00', body: 'Why?', url: 'https://gitlab.com/team/app/-/merge_requests/345#note_1' },
+          { author: 'bob', createdAt: '2026-11-10T09:00:00+01:00', body: 'Why?', url: 'https://gitlab.com/team/app/-/merge_requests/345#note_1', headSha: null },
         ],
       },
     ],
+    heads: [],
+    lastViewerActivity: { at: '2026-11-11T10:00:00Z', headSha: null },
     hasMoreThreads: false,
     hasMoreCommits: false,
   })
@@ -143,4 +157,32 @@ test('a GitLab MR with more commits than the query reads says so', () => {
   answer.data.project.mergeRequest.commitCount = 101
 
   expect(parseGitlabMr(answer)).toMatchObject({ hasMoreCommits: true })
+})
+
+test("the viewer's last activity on GitLab is their newest note, an approval or a change request, any discussion", () => {
+  const answer = structuredClone(ANSWER)
+  answer.data.project.mergeRequest.discussions.nodes.push({
+    id: 'gid://gitlab/Discussion/e5',
+    resolvable: false,
+    resolved: false,
+    notes: { nodes: [{ ...NOTE, system: true, createdAt: '2026-11-13T10:00:00Z', body: 'requested changes', url: 'u' }] },
+  })
+
+  expect(parseGitlabMr(answer).lastViewerActivity).toEqual({ at: '2026-11-13T10:00:00Z', headSha: null })
+  expect(parseGitlabMr({ data: { ...answer.data, currentUser: { username: 'eve' } } }).lastViewerActivity).toBeNull()
+})
+
+test('GitLab MR versions read as the pushed heads, oldest first, each with its patch-id', () => {
+  const versions = [
+    { id: 3, head_commit_sha: 'c3', created_at: '2026-11-12T09:00:00.000Z', patch_id_sha: 'p3', real_size: '24' },
+    { id: 2, head_commit_sha: 'c2', created_at: '2026-11-11T09:00:00.000Z', patch_id_sha: 'p1', real_size: '24' },
+    { id: 1, head_commit_sha: 'c1', created_at: '2026-11-10T09:00:00.000Z', patch_id_sha: null, real_size: '24' },
+  ]
+
+  expect(parseGitlabVersions(versions)).toEqual([
+    { sha: 'c1', pushedAt: '2026-11-10T09:00:00.000Z', patchId: null },
+    { sha: 'c2', pushedAt: '2026-11-11T09:00:00.000Z', patchId: 'p1' },
+    { sha: 'c3', pushedAt: '2026-11-12T09:00:00.000Z', patchId: 'p3' },
+  ])
+  expect(parseGitlabVersions({ message: '404 Not found' })).toEqual([])
 })
