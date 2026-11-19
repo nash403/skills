@@ -314,24 +314,17 @@ async function refresh($: EngineInterface, depth: Depth) {
   }
 }
 
+export function startGitBand($: EngineInterface) {
+  void refresh($, 'remote')
+  $.clock.every(LOCAL_EVERY_MS, () => void refresh($, 'local'))
+  $.clock.every(REMOTE_EVERY_MS, () => void refresh($, 'remote'))
+}
+
+export function refreshGitBandAfterTurn($: EngineInterface) {
+  void refresh($, 'request')
+}
+
 export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    const started = await next(e)
-
-    void refresh($, 'remote')
-    $.clock.every(LOCAL_EVERY_MS, () => void refresh($, 'local'))
-    $.clock.every(REMOTE_EVERY_MS, () => void refresh($, 'remote'))
-
-    return started
-  })
-
-  on('turn.complete', async ($, e, next) => {
-    const result = await next(e)
-    void refresh($, 'request')
-
-    return result
-  })
-
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => noteEdit($, await next(e), e.file_path))
   on('tool.call', { tool: 'Write' }, async ($, e, next) => noteEdit($, await next(e), e.file_path))
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => noteEdit($, await next(e), e.notebook_path))
