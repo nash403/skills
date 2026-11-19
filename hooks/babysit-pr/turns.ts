@@ -10,7 +10,7 @@ export type ConcerningThread = { thread: PrThread; firstComment: PrComment; turn
 
 export type NextStep = { actor: 'You' | 'Reviewers' | 'Author'; action: string }
 
-const EXCERPT_LENGTH = 80
+const EXCERPT_LENGTH = 320
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

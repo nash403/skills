@@ -18,22 +18,66 @@ export const TONES = {
   fuchsia: { bg: '#D63384', fg: LIGHT_INK },
 } satisfies Record<string, Tone>
 
-export const STATUS_LOOKS: Record<StatusChip, { tone: Tone; glyph: string }> = {
-  merged: { tone: TONES.plum, glyph: '◆' },
-  closed: { tone: TONES.slate, glyph: '×' },
-  approved: { tone: TONES.moss, glyph: '✓' },
-  'approved + threads': { tone: TONES.moss, glyph: '✓' },
-  updated: { tone: TONES.cobalt, glyph: '↑' },
-  reviewed: { tone: TONES.saffron, glyph: '✎' },
-  resolved: { tone: TONES.moss, glyph: '✓' },
-  opened: { tone: TONES.slate, glyph: '○' },
+// What a chip's icon is: drawn as an Svg where the surface has one, as its glyph on the terminal.
+export type IconName = 'check' | 'cross' | 'clock' | 'dashed' | 'warning' | 'half' | 'ban' | 'skip' | 'diamond' | 'up' | 'pencil' | 'circle'
+
+export const GLYPHS: Record<IconName, string> = {
+  check: '✓',
+  cross: '✕',
+  clock: '◷',
+  dashed: '◌',
+  warning: '⚠',
+  half: '◐',
+  ban: '⊘',
+  skip: '↷',
+  diamond: '◆',
+  up: '↑',
+  pencil: '✎',
+  circle: '○',
 }
 
-export const CI_LOOKS: Record<Exclude<CiState, 'none'>, { text: string; tone: Tone }> = {
-  starting: { text: '◌ CI starting', tone: TONES.slate },
-  pending: { text: '◷ CI pending', tone: TONES.saffron },
-  ok: { text: '✓ CI ok', tone: TONES.moss },
-  error: { text: '✕ CI error', tone: TONES.signal },
+// Each icon on a 16-unit grid: strokes in `S`, fills in `F`, both swapped for the color it is drawn in.
+const ICON_PATHS: Record<IconName, string> = {
+  check: '<path d="M3.5 8.5l3 3 6-7" stroke="S"/>',
+  cross: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="S"/>',
+  clock: '<circle cx="8" cy="8" r="6" stroke="S"/><path d="M8 4.8V8l2.2 1.6" stroke="S"/>',
+  dashed: '<circle cx="8" cy="8" r="6" stroke="S" stroke-dasharray="2.4 2.4"/>',
+  warning: '<path d="M8 2.2l6.3 11.1H1.7z" stroke="S"/><path d="M8 6.5v3" stroke="S"/><circle cx="8" cy="11.4" r=".6" fill="F"/>',
+  half: '<circle cx="8" cy="8" r="6" stroke="S"/><path d="M8 2a6 6 0 0 1 0 12z" fill="F"/>',
+  ban: '<circle cx="8" cy="8" r="6" stroke="S"/><path d="M3.8 12.2l8.4-8.4" stroke="S"/>',
+  skip: '<path d="M3 11.5a5 5 0 0 1 9.4-2.4" stroke="S"/><path d="M12.8 4.6v4.2H8.6" stroke="S"/>',
+  diamond: '<path d="M8 2l6 6-6 6-6-6z" fill="F"/>',
+  up: '<path d="M8 13V3M4 7l4-4 4 4" stroke="S"/>',
+  pencil: '<path d="M10.5 2.5l3 3L6 13H3v-3z" stroke="S"/>',
+  circle: '<circle cx="8" cy="8" r="5.5" stroke="S"/>',
+}
+
+export function iconSvg(icon: IconName, color: string, size: number) {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">`,
+    ICON_PATHS[icon].replace(/"[SF]"/g, `"${color}"`),
+    '</svg>',
+  ].join('')
+}
+
+export type Look = { tone: Tone; icon: IconName }
+
+export const STATUS_LOOKS: Record<StatusChip, Look> = {
+  merged: { tone: TONES.plum, icon: 'diamond' },
+  closed: { tone: TONES.slate, icon: 'cross' },
+  approved: { tone: TONES.moss, icon: 'check' },
+  'approved + threads': { tone: TONES.moss, icon: 'check' },
+  updated: { tone: TONES.cobalt, icon: 'up' },
+  reviewed: { tone: TONES.saffron, icon: 'pencil' },
+  resolved: { tone: TONES.moss, icon: 'check' },
+  opened: { tone: TONES.slate, icon: 'circle' },
+}
+
+export const CI_LOOKS: Record<Exclude<CiState, 'none'>, Look & { text: string }> = {
+  starting: { text: 'CI starting', tone: TONES.slate, icon: 'dashed' },
+  pending: { text: 'CI pending', tone: TONES.saffron, icon: 'clock' },
+  ok: { text: 'CI ok', tone: TONES.moss, icon: 'check' },
+  error: { text: 'CI error', tone: TONES.signal, icon: 'cross' },
 }
 
 export const IMPORTANCE_TONES: Record<TriageImportance, Tone> = { high: TONES.signal, medium: TONES.saffron, low: TONES.slate }
@@ -68,6 +112,22 @@ export function avatarTone(name: string): Tone {
   }
 
   return { bg: AVATAR_COLORS[hash % AVATAR_COLORS.length] ?? TONES.slate.bg, fg: LIGHT_INK }
+}
+
+function escapeXml(text: string) {
+  return text.replace(/[<>&"']/g, char => `&#${char.charCodeAt(0)};`)
+}
+
+// A filled disc with the letters centered: an avatar exactly as tall as a line of text, no padding around it.
+export function avatarSvg(letters: string, tone: Tone, size: number) {
+  const fontSize = letters.length > 1 ? 8.5 : 11
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 20 20">`,
+    `<circle cx="10" cy="10" r="10" fill="${tone.bg}"/>`,
+    `<text x="10" y="10" dy=".35em" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="${fontSize}" font-weight="600" fill="${tone.fg}">${escapeXml(letters)}</text>`,
+    '</svg>',
+  ].join('')
 }
 
 const DIFF_BLOCKS = 5

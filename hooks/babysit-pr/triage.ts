@@ -22,7 +22,7 @@ const THREAD_PROPERTIES = {
   name: { type: 'string', pattern: KEBAB_CASE.source, maxLength: MAX_NAME_LENGTH, description: 'A short kebab-case id, two or three words that sum the thread up, such as null-check-save.' },
   classification: { type: 'string', maxLength: MAX_CLASSIFICATION_LENGTH, description: 'Whether it holds up and what it calls for, in plain words: "Valid, change needed", "Wrong, missing context", "Already fixed", "Question", "Nitpick"...' },
   importance: { type: 'string', enum: IMPORTANCES },
-  isHandled: { type: 'boolean', description: 'True when the point needs nothing more from anyone: fixed in the code, answered, or not worth acting on.' },
+  isHandled: { type: 'boolean', description: 'True when the point needs nothing more from anyone: fixed in the code as it stands on the branch now, latest commits included, answered, or not worth acting on.' },
   summary: { type: 'string', maxLength: MAX_SUMMARY_LENGTH, description: 'One line: what the thread asks and where it stands.' },
   details: { type: 'string', maxLength: MAX_DETAILS_LENGTH, description: 'A few sentences: what you checked in the code and what it shows, and the fix when one is needed.' },
   lastCommentUrl: {
@@ -36,6 +36,7 @@ export const TRIAGE_TOOL_SPEC = {
   name: 'babysit_pr_triage',
   description: [
     'Record the triage of review threads on a PR or MR the /babysit-pr pane follows, so the pane shows it beside each thread.',
+    'Call it whenever you triage threads of such a PR, through the addressing-feedback skill or not, once the triage is done.',
     'Triage first, the way the addressing-feedback skill does: read every message of each thread, check what it says against the code, then classify it.',
     "One entry per thread. Write the summaries in the conversation's language.",
     'This only writes to the pane: it posts nothing, resolves nothing and changes no code.',

@@ -137,8 +137,9 @@ test("on a peer's PR it's my turn when the author replied, I'm mentioned again, 
 
 test('a first message is cut to one short line', () => {
   expect(excerpt('Why  this?\n\nIt looks off.')).toBe('Why this? It looks off.')
-  expect(excerpt('word '.repeat(30))).toBe(`${'word '.repeat(15).trim()}…`)
-  expect(excerpt('word '.repeat(30)).length).toBeLessThanOrEqual(80)
+  expect(excerpt('word '.repeat(30))).toBe('word '.repeat(30).trim())
+  expect(excerpt('word '.repeat(100))).toBe(`${'word '.repeat(63).trim()}…`)
+  expect(excerpt('word '.repeat(100)).length).toBeLessThanOrEqual(320)
 })
 
 test('on my PR the next step puts my turn first, then what waits on reviewers', () => {

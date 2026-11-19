@@ -7,6 +7,7 @@ export const REPLY_DRAFT_TOOL_SPEC = {
   name: 'babysit_pr_draft_reply',
   description: [
     'Put a draft reply under an open review thread of a PR or MR the /babysit-pr pane follows.',
+    'Call it for every reply you draft on such a PR, through the addressing-feedback skill or not.',
     'The user reads it there and posts or discards it with a click. Calling it again for the same thread replaces the draft.',
     'Draft it the way the addressing-feedback skill does: check the facts first, then write it short, straight to the point, in a human voice and in the language of the thread.',
     'This only writes to the pane: it posts nothing and resolves nothing.',

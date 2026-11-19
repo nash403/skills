@@ -5,8 +5,8 @@ import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, r
 import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
-import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, diffBarSvg, diffBlocks, displayName, initials, isBot, settledThreadsSvg } from './look'
-import type { Tone } from './look'
+import { CI_LOOKS, GLYPHS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarSvg, avatarTone, diffBarSvg, diffBlocks, displayName, iconSvg, initials, isBot, settledThreadsSvg } from './look'
+import type { IconName, Tone } from './look'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
 import { prKey, prLabel } from './refs'
@@ -37,15 +37,21 @@ function isCellSurface(e: PaneInput) {
   return e.surface === 'terminal'
 }
 
-// A filled chip: its own background, so it reads on a light or a dark theme alike.
-function chip($: EngineInterface, e: PaneInput, text: string, tone: Tone, key?: string) {
-  const { Box, Text } = $.ui.resolve(e)
+const ICON_SIZE = 14
+
+// A filled chip: its own background, so it reads on a light or a dark theme alike. Its icon is drawn at the text's
+// height where the surface draws an Svg: a glyph there renders smaller than the letters beside it.
+function chip($: EngineInterface, e: PaneInput, text: string, tone: Tone, { key, icon }: { key?: string; icon?: IconName } = {}) {
+  const table = $.ui.resolve(e)
+  const { Box, Text } = table
   const pill = isCellSurface(e) ? {} : { borderStyle: 'round', borderColor: tone.bg }
+  const drawsIcon = icon !== undefined && !isCellSurface(e) && 'Svg' in table
 
   return (
-    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={isCellSurface(e) ? 1 : 'xs'} {...pill}>
+    <Box key={key ?? text} flexDirection="row" columnGap="xs" alignItems="center" backgroundColor={tone.bg} paddingX={isCellSurface(e) ? 1 : 'xs'} {...pill}>
+      {drawsIcon && <table.Svg source={iconSvg(icon, tone.fg, ICON_SIZE)} alt="" width={ICON_SIZE} height={ICON_SIZE} />}
       <Text color={tone.fg} bold>
-        {text}
+        {icon !== undefined && !drawsIcon ? `${GLYPHS[icon]} ${text}` : text}
       </Text>
     </Box>
   )
@@ -104,17 +110,24 @@ function noThreads($: EngineInterface, e: PaneInput) {
   )
 }
 
-// Initials on the person's own color, a gear for a bot: a chip with no side padding off the terminal, where the
-// rounded frame alone gives the letters room.
+const AVATAR_SIZE = 18
+
+// Initials on the person's own color, a gear for a bot: a disc as tall as a line of text where the surface draws an
+// Svg, a one-cell-padded block on the terminal.
 function avatar($: EngineInterface, e: PaneInput, name: string) {
-  const { Box, Text } = $.ui.resolve(e)
+  const table = $.ui.resolve(e)
+  const { Box, Text } = table
   const tone = isBot(name) ? TONES.slate : avatarTone(name)
-  const pill = isCellSurface(e) ? { paddingX: 1 } : ({ borderStyle: 'round', borderColor: tone.bg } as const)
+  const letters = isBot(name) ? '⚙' : initials(name)
+
+  if (!isCellSurface(e) && 'Svg' in table) {
+    return <table.Svg key={`avatar:${name}`} source={avatarSvg(letters, tone, AVATAR_SIZE)} alt="" width={AVATAR_SIZE} height={AVATAR_SIZE} />
+  }
 
   return (
-    <Box key={`avatar:${name}`} backgroundColor={tone.bg} {...pill}>
-      <Text color={tone.fg} size="caption" bold>
-        {isBot(name) ? '⚙' : initials(name)}
+    <Box key={`avatar:${name}`} backgroundColor={tone.bg} paddingX={1}>
+      <Text color={tone.fg} bold>
+        {letters}
       </Text>
     </Box>
   )
@@ -194,11 +207,11 @@ function flags($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box } = $.ui.resolve(e)
   const ci = pr.state === 'open' && pr.ci !== 'none' ? CI_LOOKS[pr.ci] : null
   const items = [
-    ci && chip($, e, ci.text, ci.tone),
-    isPushedSinceApproval(pr) && chip($, e, '⚠ pushed since your approval', TONES.saffron),
-    pr.isDraft && chip($, e, '◐ draft', TONES.slate),
-    pr.blocked && chip($, e, `⊘ blocked: ${pr.blocked}`, TONES.signal),
-    isSkipCi(pr.title, pr.headMessage) && chip($, e, '↷ skip CI', TONES.saffron),
+    ci && chip($, e, ci.text, ci.tone, { icon: ci.icon }),
+    isPushedSinceApproval(pr) && chip($, e, 'pushed since your approval', TONES.saffron, { icon: 'warning' }),
+    pr.isDraft && chip($, e, 'draft', TONES.slate, { icon: 'half' }),
+    pr.blocked && chip($, e, `blocked: ${pr.blocked}`, TONES.signal, { icon: 'ban' }),
+    isSkipCi(pr.title, pr.headMessage) && chip($, e, 'skip CI', TONES.saffron, { icon: 'skip' }),
   ].filter(Boolean)
 
   if (items.length === 0) {
@@ -285,8 +298,9 @@ function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
-// The PR at a glance, framed in its status color: status and title, author and branches, what it does, its flags
-// and the size of the change.
+// The PR at a glance, framed in its status color: status over the title, author and branches, what it does, its
+// flags and the size of the change. The status sits on its own row: beside a title that wraps, it would hang off its
+// first line.
 function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSummary | undefined) {
   const { Box, Text } = $.ui.resolve(e)
   const status = statusChip(pr)
@@ -297,14 +311,10 @@ function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSum
     wash: tint(look.tone),
     children: [
       <Box key="head" flexDirection="column" rowGap="sm">
-        <Box flexDirection="row" columnGap="md" alignItems="flex-start">
-          {chip($, e, `${look.glyph} ${status}`, look.tone, 'status')}
-          <Box flexShrink={1}>
-            <Text size="heading" weight="bold" wrap="wrap">
-              {pr.title}
-            </Text>
-          </Box>
-        </Box>
+        <Box flexDirection="row">{chip($, e, status, look.tone, { key: 'status', icon: look.icon })}</Box>
+        <Text size="heading" weight="bold" wrap="wrap">
+          {pr.title}
+        </Text>
         <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
           {person($, e, pr.author, pr.author === pr.viewer)}
           <Text dimColor wrap="truncate-middle">
@@ -513,16 +523,26 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
   const { name, classification, importance, isHandled, summary } = status.triage
   const isOpen = details === 'open'
 
+  // The classification leads: it is what the triage concluded. The name trails, small, for referring to the thread.
   return (
     <Box flexDirection="column" rowGap="sm">
-      <Box flexDirection="row" flexWrap="wrap" columnGap="sm" rowGap="sm" alignItems="center">
-        <Text bold color={TONES.cobalt.bg}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
+        <Text weight="semibold">{classification}</Text>
+        <Text size="caption">
+          <Text color={IMPORTANCE_TONES[importance].bg}>●</Text> {importance}
+        </Text>
+        <Text size="caption" weight="semibold" color={isHandled ? TONES.moss.bg : TONES.signal.bg}>
+          {isHandled ? '✓ handled' : '✗ not handled'}
+        </Text>
+        {status.kind === 'changed' && (
+          <Text size="caption" color={TONES.saffron.bg}>
+            new comment since triage
+          </Text>
+        )}
+        <Box flexGrow={1} />
+        <Text size="caption" mono dimColor>
           {name}
         </Text>
-        <Text>{classification}</Text>
-        {chip($, e, importance, IMPORTANCE_TONES[importance], `importance:${threadId}`)}
-        <Text color={isHandled ? TONES.moss.bg : TONES.saffron.bg}>{isHandled ? '✓ handled' : 'not handled'}</Text>
-        {status.kind === 'changed' && <Text color={TONES.saffron.bg}>new comment since triage</Text>}
       </Box>
       <Box flexDirection="row" columnGap="sm">
         <Box flexShrink={1}>
@@ -566,7 +586,15 @@ function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body
 function turnMark($: EngineInterface, e: PaneInput, threadId: string, isMine: boolean) {
   const { Text } = $.ui.resolve(e)
 
-  return isMine ? chip($, e, 'your turn', TONES.fuchsia, `turn:${threadId}`) : <Text dimColor>◷ waiting</Text>
+  return isMine ? (
+    <Text key={`turn:${threadId}`} size="caption" weight="semibold" color={TONES.fuchsia.bg}>
+      ➜ your turn
+    </Text>
+  ) : (
+    <Text key={`turn:${threadId}`} size="caption" dimColor>
+      ◷ waiting
+    </Text>
+  )
 }
 
 // One thread as a card: who opened it and whose turn it is, what it says, then what can be done about it. A thread
@@ -594,7 +622,7 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
         </Link>
       </Box>,
       status.kind === 'not-triaged' ? (
-        <Text key="body" dimColor wrap="wrap">
+        <Text key="body" dimColor wrap="wrap" maxLines={4}>
           {excerpt(firstComment.body)}
         </Text>
       ) : (
@@ -642,7 +670,7 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
     <Text key="tally" color={tally.handled === tally.total ? TONES.moss.bg : undefined} dimColor={tally.handled !== tally.total}>
       {feedbackText(tally)}
     </Text>,
-    toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, 'to-triage'),
+    toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, { key: 'to-triage' }),
     toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />,
   ]
 

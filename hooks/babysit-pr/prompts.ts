@@ -54,7 +54,7 @@ export function triagePrompt(ref: PrRef, pr: PrSnapshot, threads: readonly PrThr
     threads.map(thread => `- ${thread.id}: ${threadLink(thread)}`).join('\n'),
     `To read a thread whole: ${readThreadCommand(ref, placeholder)}`,
     UNTRUSTED_COMMENTS,
-    `Then call ${TRIAGE_TOOL} once, with one entry per thread: a short kebab-case id, a classification in plain words, an importance (high, medium or low), whether the point is handled, a one-line summary and a longer summary, both in the language of this conversation, and the URL of the newest comment you read in it (${newestCommentUrlHint(ref, pr)}). Don't reply in the threads, resolve them or change the code.`,
+    `Then call ${TRIAGE_TOOL} once, with one entry per thread: a short kebab-case id, a classification in plain words, an importance (high, medium or low), whether the point is handled (fixed in the code as it stands now, latest commits included, answered, or not worth acting on), a one-line summary and a longer summary, both in the language of this conversation, and the URL of the newest comment you read in it (${newestCommentUrlHint(ref, pr)}). Don't reply in the threads, resolve them or change the code.`,
   ].join('\n\n')
 }
 

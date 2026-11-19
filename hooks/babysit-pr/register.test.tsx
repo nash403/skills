@@ -16,6 +16,11 @@ const PANE = {
 
 const SURFACES = ['terminal', 'desktop'] as const
 
+// A chip's icon is a glyph in its text on the terminal, an Svg beside it elsewhere.
+function glyphed(surface: (typeof SURFACES)[number], glyph: string, text: string) {
+  return surface === 'terminal' ? `${glyph} ${text}` : text
+}
+
 const OPEN_COMMAND = {
   command: 'babysit-pr',
   args: '',
@@ -258,11 +263,11 @@ test('the PR of the branch and the PRs the session shows fill the pane, read onl
     expect((await ui.find({ type: 'Text', text: /^acme\/app#12/ }))?.text).toBe('acme/app#12 ↗')
     expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'https://github.com/acme/app/pull/12' } })
     expect((await ui.find({ type: 'Text', text: /^1\/2$/ }))?.text).toBe('1/2')
-    expect((await ui.find({ type: 'Text', text: /^. (approved|reviewed)$/ }))?.text).toBe('✎ reviewed')
-    expect((await ui.find({ type: 'Text', text: /^. CI/ }))?.text).toBe('✕ CI error')
-    expect((await ui.find({ type: 'Text', text: /^. draft$/ }))?.text).toBe('◐ draft')
-    expect((await ui.find({ type: 'Text', text: /^. blocked/ }))?.text).toBe('⊘ blocked: approvals')
-    expect((await ui.find({ type: 'Text', text: /^. skip CI$/ }))?.text).toBe('↷ skip CI')
+    expect((await ui.find({ type: 'Text', text: /^(. )?(approved|reviewed)$/ }))?.text).toBe(glyphed(surface, '✎', 'reviewed'))
+    expect((await ui.find({ type: 'Text', text: /^(. )?CI/ }))?.text).toBe(glyphed(surface, '✕', 'CI error'))
+    expect((await ui.find({ type: 'Text', text: /^(. )?draft$/ }))?.text).toBe(glyphed(surface, '◐', 'draft'))
+    expect((await ui.find({ type: 'Text', text: /^(. )?blocked/ }))?.text).toBe(glyphed(surface, '⊘', 'blocked: approvals'))
+    expect((await ui.find({ type: 'Text', text: /^(. )?skip CI$/ }))?.text).toBe(glyphed(surface, '↷', 'skip CI'))
     expect((await ui.find({ type: 'Text', text: /^\+/ }))?.text).toBe('+40')
     expect((await ui.find({ key: 'stat:files' }))?.text).toBe('2files')
     expect((await ui.find({ key: 'stat:commits' }))?.text).toBe('2commits')
@@ -388,9 +393,9 @@ test('a PR added by hand is a number of the current repo or a URL', async ($, on
 
     await ui.input({ key: 'add', text: 'https://gitlab.com/team/tools/-/merge_requests/21' })
     expect((await ui.find({ type: 'Text', text: /^team\/tools/ }))?.text).toBe('team/tools!21 ↗')
-    expect((await ui.find({ type: 'Text', text: /^. approved$/ }))?.text).toBe('✓ approved')
-    expect((await ui.find({ type: 'Text', text: /pushed since/ }))?.text).toBe('⚠ pushed since your approval')
-    expect((await ui.find({ type: 'Text', text: /^. CI/ }))?.text).toBe('✓ CI ok')
+    expect((await ui.find({ type: 'Text', text: /^(. )?approved$/ }))?.text).toBe(glyphed(surface, '✓', 'approved'))
+    expect((await ui.find({ type: 'Text', text: /pushed since/ }))?.text).toBe(glyphed(surface, '⚠', 'pushed since your approval'))
+    expect((await ui.find({ type: 'Text', text: /^(. )?CI/ }))?.text).toBe(glyphed(surface, '✓', 'CI ok'))
     await ui.unmount()
   }
 })
@@ -533,7 +538,7 @@ test('the next step and my open threads show whose turn it is, mine first', asyn
       'reply to 1 thread',
       '◷ Reviewers: 1 thread waits for them',
     ])
-    expect((await ui.findAll({ type: 'Text', text: /^(your turn|◷ waiting)$/ })).map(turn => turn.text)).toEqual(['your turn', '◷ waiting'])
+    expect((await ui.findAll({ type: 'Text', text: /^(➜ your turn|◷ waiting)$/ })).map(turn => turn.text)).toEqual(['➜ your turn', '◷ waiting'])
     expect((await ui.find({ key: 'mine' }))?.text).toContain('cid')
     expect((await ui.find({ key: 'mine' }))?.text).toContain('Rename this to `exportRows`.')
     expect((await ui.find({ key: 'waiting' }))?.text).toContain('Why does the export skip empty rows?')
