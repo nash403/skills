@@ -30,10 +30,10 @@ export const STATUS_LOOKS: Record<StatusChip, { tone: Tone; glyph: string }> = {
 }
 
 export const CI_LOOKS: Record<Exclude<CiState, 'none'>, { text: string; tone: Tone }> = {
-  starting: { text: 'CI starting', tone: TONES.slate },
-  pending: { text: 'CI pending', tone: TONES.saffron },
-  ok: { text: 'CI ok', tone: TONES.moss },
-  error: { text: 'CI error', tone: TONES.signal },
+  starting: { text: '◌ CI starting', tone: TONES.slate },
+  pending: { text: '◷ CI pending', tone: TONES.saffron },
+  ok: { text: '✓ CI ok', tone: TONES.moss },
+  error: { text: '✕ CI error', tone: TONES.signal },
 }
 
 export const IMPORTANCE_TONES: Record<TriageImportance, Tone> = { high: TONES.signal, medium: TONES.saffron, low: TONES.slate }
@@ -98,5 +98,16 @@ export function diffBarSvg(additions: number, deletions: number, width: number, 
     `<clipPath id="pill"><rect width="${width}" height="${height}" rx="${height / 2}"/></clipPath>`,
     `<g clip-path="url(#pill)"><rect width="${width}" height="${height}" fill="${rest}"/>`,
     `<rect width="${added}" height="${height}" fill="${TONES.moss.bg}"/></g></svg>`,
+  ].join('')
+}
+
+// Two speech bubbles, the front one checked: no open thread. Gray strokes at partial opacity read on either theme.
+export function settledThreadsSvg() {
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="32" viewBox="0 0 44 32" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">',
+    `<path d="M14 8a2 2 0 0 1 2-2h20a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4h-2v4l-5-4h-1" stroke="${TONES.slate.bg}" stroke-opacity=".45"/>`,
+    `<path d="M4 12a4 4 0 0 1 4-4h18a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4H13l-5 4v-4a4 4 0 0 1-4-4z" stroke="${TONES.slate.bg}" fill="${TONES.slate.bg}" fill-opacity=".1"/>`,
+    `<path d="M12 16.5l3 3 6-6" stroke="${TONES.moss.bg}" stroke-width="2"/>`,
+    '</svg>',
   ].join('')
 }

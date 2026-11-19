@@ -259,14 +259,14 @@ test('the PR of the branch and the PRs the session shows fill the pane, read onl
     expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'https://github.com/acme/app/pull/12' } })
     expect((await ui.find({ type: 'Text', text: /^1\/2$/ }))?.text).toBe('1/2')
     expect((await ui.find({ type: 'Text', text: /^. (approved|reviewed)$/ }))?.text).toBe('✎ reviewed')
-    expect((await ui.find({ type: 'Text', text: /^CI/ }))?.text).toBe('CI error')
-    expect((await ui.find({ type: 'Text', text: /^draft$/ }))?.text).toBe('draft')
-    expect((await ui.find({ type: 'Text', text: /^blocked/ }))?.text).toBe('blocked: approvals')
-    expect((await ui.find({ type: 'Text', text: /^skip CI$/ }))?.text).toBe('skip CI')
+    expect((await ui.find({ type: 'Text', text: /^. CI/ }))?.text).toBe('✕ CI error')
+    expect((await ui.find({ type: 'Text', text: /^. draft$/ }))?.text).toBe('◐ draft')
+    expect((await ui.find({ type: 'Text', text: /^. blocked/ }))?.text).toBe('⊘ blocked: approvals')
+    expect((await ui.find({ type: 'Text', text: /^. skip CI$/ }))?.text).toBe('↷ skip CI')
     expect((await ui.find({ type: 'Text', text: /^\+/ }))?.text).toBe('+40')
     expect((await ui.find({ key: 'stat:files' }))?.text).toBe('2files')
     expect((await ui.find({ key: 'stat:commits' }))?.text).toBe('2commits')
-    expect((await ui.find({ key: 'stat:threads' }))?.text).toBe('💬 1/2open')
+    expect((await ui.find({ key: 'stat:threads' }))?.text).toBe('1/2open threads')
     expect((await ui.find({ type: 'Text', text: /^bob/ }))?.text).toBe('bob')
     expect((await ui.find({ type: 'Text', text: /approved$/ }))?.text).toBe('✓ approved')
     expect((await ui.find({ type: 'Text', text: /^◆ commits$/ }))?.text).toBe('◆ commits')
@@ -324,7 +324,7 @@ test('a PR with no CI shows no CI state', async ($, on) => {
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /^acme\/app#12/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^(CI |no CI)/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /CI (starting|pending|ok|error)|no CI/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -390,7 +390,7 @@ test('a PR added by hand is a number of the current repo or a URL', async ($, on
     expect((await ui.find({ type: 'Text', text: /^team\/tools/ }))?.text).toBe('team/tools!21 ↗')
     expect((await ui.find({ type: 'Text', text: /^. approved$/ }))?.text).toBe('✓ approved')
     expect((await ui.find({ type: 'Text', text: /pushed since/ }))?.text).toBe('⚠ pushed since your approval')
-    expect((await ui.find({ type: 'Text', text: /^CI/ }))?.text).toBe('CI ok')
+    expect((await ui.find({ type: 'Text', text: /^. CI/ }))?.text).toBe('✓ CI ok')
     await ui.unmount()
   }
 })
@@ -528,8 +528,8 @@ test('the next step and my open threads show whose turn it is, mine first', asyn
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect((await ui.findAll({ type: 'Text', text: /^(your move|reply to 1 thread|◷ Reviewers: .*)$/ })).map(step => step.text)).toEqual([
-      'your move',
+    expect((await ui.findAll({ type: 'Text', text: /^(YOUR MOVE|reply to 1 thread|◷ Reviewers: .*)$/ })).map(step => step.text)).toEqual([
+      'YOUR MOVE',
       'reply to 1 thread',
       '◷ Reviewers: 1 thread waits for them',
     ])
@@ -1052,7 +1052,7 @@ test("Review changes shows on a peer's PR once code was pushed since my last com
 
   for (const surface of SURFACES) {
     const ui = await mountPeerPr($, surface)
-    expect((await ui.find({ type: 'Text', text: /^your move$/ }))?.text).toBe('your move')
+    expect((await ui.find({ type: 'Text', text: /^YOUR MOVE$/ }))?.text).toBe('YOUR MOVE')
     expect((await ui.find({ type: 'Text', text: /^code pushed since your review$/ }))?.text).toBe('code pushed since your review')
     commands.length = 0
 

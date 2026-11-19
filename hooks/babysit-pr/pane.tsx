@@ -5,7 +5,7 @@ import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, r
 import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
-import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, diffBarSvg, diffBlocks, displayName, initials, isBot } from './look'
+import { CI_LOOKS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarTone, diffBarSvg, diffBlocks, displayName, initials, isBot, settledThreadsSvg } from './look'
 import type { Tone } from './look'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
@@ -43,7 +43,7 @@ function chip($: EngineInterface, e: PaneInput, text: string, tone: Tone, key?: 
   const pill = isCellSurface(e) ? {} : { borderStyle: 'round', borderColor: tone.bg }
 
   return (
-    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={1} {...pill}>
+    <Box key={key ?? text} backgroundColor={tone.bg} paddingX={isCellSurface(e) ? 1 : 'xs'} {...pill}>
       <Text color={tone.fg} bold>
         {text}
       </Text>
@@ -89,25 +89,35 @@ function slab($: EngineInterface, e: PaneInput, { key, rail, wash = tint(TONES.s
   )
 }
 
-// What stands where content will come: a quiet rounded frame, a glyph, and what will land there.
-function placeholder($: EngineInterface, e: PaneInput, key: string, text: string) {
-  const { Box, Text } = $.ui.resolve(e)
+// No thread concerns the viewer: a short line under a small drawing of a settled conversation, where the surface
+// draws an Svg, so the section keeps its place without a paragraph.
+function noThreads($: EngineInterface, e: PaneInput) {
+  const table = $.ui.resolve(e)
+  const { Box, Text } = table
+  const text = 'No open threads of yours'
 
   return (
-    <Box key={key} flexDirection="row" columnGap="sm" borderStyle="dashed" borderColor="subtle" paddingX="md" paddingY="sm">
-      <Text dimColor>◌</Text>
-      <Box flexShrink={1}>
-        <Text dimColor italic wrap="wrap">
-          {text}
-        </Text>
-      </Box>
+    <Box key="threads-empty" flexDirection="column" rowGap="sm" alignItems="center" borderStyle="dashed" borderColor="subtle" paddingX="md" paddingY="md">
+      {'Svg' in table ? <table.Svg source={settledThreadsSvg()} alt={text} width={44} height={32} /> : <Text dimColor>💬</Text>}
+      <Text dimColor>{text}</Text>
     </Box>
   )
 }
 
-// Initials on the person's own color, a gear for a bot.
+// Initials on the person's own color, a gear for a bot: a chip with no side padding off the terminal, where the
+// rounded frame alone gives the letters room.
 function avatar($: EngineInterface, e: PaneInput, name: string) {
-  return chip($, e, isBot(name) ? '⚙' : initials(name), isBot(name) ? TONES.slate : avatarTone(name), `avatar:${name}`)
+  const { Box, Text } = $.ui.resolve(e)
+  const tone = isBot(name) ? TONES.slate : avatarTone(name)
+  const pill = isCellSurface(e) ? { paddingX: 1 } : ({ borderStyle: 'round', borderColor: tone.bg } as const)
+
+  return (
+    <Box key={`avatar:${name}`} backgroundColor={tone.bg} {...pill}>
+      <Text color={tone.fg} size="caption" bold>
+        {isBot(name) ? '⚙' : initials(name)}
+      </Text>
+    </Box>
+  )
 }
 
 function person($: EngineInterface, e: PaneInput, name: string, isViewer: boolean) {
@@ -186,9 +196,9 @@ function flags($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const items = [
     ci && chip($, e, ci.text, ci.tone),
     isPushedSinceApproval(pr) && chip($, e, '⚠ pushed since your approval', TONES.saffron),
-    pr.isDraft && chip($, e, 'draft', TONES.slate),
-    pr.blocked && chip($, e, `blocked: ${pr.blocked}`, TONES.signal),
-    isSkipCi(pr.title, pr.headMessage) && chip($, e, 'skip CI', TONES.saffron),
+    pr.isDraft && chip($, e, '◐ draft', TONES.slate),
+    pr.blocked && chip($, e, `⊘ blocked: ${pr.blocked}`, TONES.signal),
+    isSkipCi(pr.title, pr.headMessage) && chip($, e, '↷ skip CI', TONES.saffron),
   ].filter(Boolean)
 
   if (items.length === 0) {
@@ -240,7 +250,7 @@ function diffBar($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
-// The size of the change in one strip: lines with their diff bar, files, commits, then the open threads under a 💬.
+// The size of the change in one strip: lines with their diff bar, files, commits, then the open threads.
 function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const { open, total } = threadCounts(pr)
@@ -270,7 +280,7 @@ function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
       {tile($, e, 'stat:lines', lines, diffBar($, e, pr))}
       {tile($, e, 'stat:files', figure(String(pr.changedFiles)), caption(pr.changedFiles === 1 ? 'file' : 'files'))}
       {tile($, e, 'stat:commits', figure(commitCount(pr)), caption(pr.commits.length === 1 ? 'commit' : 'commits'))}
-      {tile($, e, 'stat:threads', figure(`💬 ${open}/${total}${pr.hasMoreThreads ? '+' : ''}`), caption('open'))}
+      {tile($, e, 'stat:threads', figure(`${open}/${total}${pr.hasMoreThreads ? '+' : ''}`), caption('open threads'))}
     </Box>
   )
 }
@@ -336,8 +346,9 @@ function loadingCard($: EngineInterface, e: PaneInput, ref: PrRef) {
   })
 }
 
-// Who moves next, with the viewer's own buttons. The user's move is the loudest thing in the pane, framed in the one
-// color nothing else uses; everyone else's reads quietly.
+// Who moves next, with the viewer's own buttons. The user's move is the loudest thing in the pane: its slab and its
+// arrow take the one color nothing else uses, and it reads as a heading, not as one more status chip. Everyone
+// else's reads quietly.
 function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const steps = nextSteps(pr)
@@ -355,10 +366,17 @@ function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot)
     gap: 'sm',
     children: (
       <Box flexDirection="column" rowGap="sm">
+        {isMyMove && (
+          <Text size="caption" weight="semibold" color={TONES.fuchsia.bg}>
+            YOUR MOVE
+          </Text>
+        )}
         {steps.map(({ actor, action }) =>
           actor === 'You' ? (
-            <Box key={`${actor}: ${action}`} flexDirection="row" columnGap="md" alignItems="center">
-              {chip($, e, 'your move', TONES.fuchsia, `move:${action}`)}
+            <Box key={`${actor}: ${action}`} flexDirection="row" columnGap="sm">
+              <Text bold color={TONES.fuchsia.bg}>
+                ➜
+              </Text>
               <Text bold>{action}</Text>
             </Box>
           ) : (
@@ -610,14 +628,7 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
     return (
       <Box flexDirection="column" rowGap="sm">
         {sectionTitle($, e, 'Your open threads')}
-        {placeholder(
-          $,
-          e,
-          'threads-empty',
-          isViewerPr(view.pr)
-            ? 'No open thread waits on you. Review comments land here, with Explain, Fix and Reply beside each one.'
-            : 'No open thread of yours. Comments you leave on this PR land here, with what was said since.',
-        )}
+        {noThreads($, e)}
       </Box>
     )
   }
