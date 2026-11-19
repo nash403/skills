@@ -23,6 +23,7 @@ const ANA_PR: PrSnapshot = {
   blocked: null,
   reviewers: ['bob', 'cid'],
   approvals: [],
+  reviews: [],
   commits: [
     { sha: 'c1', author: 'ana', committedAt: '2026-11-10T10:00:00Z' },
     { sha: 'c2', author: 'ana', committedAt: '2026-11-12T10:00:00Z' },
@@ -198,4 +199,25 @@ test('a merged or closed PR has no next step', () => {
 
   expect(steps({ ...pr, state: 'merged' })).toEqual([])
   expect(steps({ ...pr, state: 'closed' })).toEqual([])
+})
+
+test('on my PR a review without a thread counts as a review, a review by the author does not', () => {
+  const changesRequested = { author: 'bob', state: 'changes-requested', submittedAt: '2026-11-11T09:00:00Z' } as const
+  const authorReply = { author: 'ana', state: 'commented', submittedAt: '2026-11-11T09:00:00Z' } as const
+
+  expect(steps({ ...ANA_PR, reviews: [changesRequested] })).toEqual(['Reviewers: approve, no open thread'])
+  expect(steps({ ...ANA_PR, reviews: [authorReply] })).toEqual(['Reviewers: not reviewed yet'])
+})
+
+test("on a peer's PR my review without a thread waits on the author, then on me once code is pushed", () => {
+  const review = (state: 'changes-requested' | 'commented', day: number) => ({
+    author: 'bob',
+    state,
+    submittedAt: `2026-11-${day}T09:00:00Z`,
+  })
+
+  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 13)] })).toEqual(['Author: address your review'])
+  expect(steps({ ...AS_BOB, reviews: [review('commented', 13)] })).toEqual(['You: ready to approve'])
+  expect(steps({ ...AS_BOB, reviews: [review('changes-requested', 11)] })).toEqual(['You: code pushed since your review'])
+  expect(steps({ ...AS_BOB, reviews: [{ ...review('commented', 13), author: 'cid' }] })).toEqual(['You: not reviewed yet'])
 })

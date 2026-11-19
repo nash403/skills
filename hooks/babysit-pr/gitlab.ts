@@ -1,4 +1,4 @@
-import type { PrSnapshot, PrState } from '../../types'
+import type { PrReview, PrSnapshot, PrState } from '../../types'
 import { ciState, gitlabBlockedReason } from './rules'
 import type { JobOutcome } from './rules'
 
@@ -12,7 +12,7 @@ export const GITLAB_MR_QUERY = `query($project: ID!, $iid: String!) {
       detailedMergeStatus
       approved
       approvedBy { nodes { username } }
-      reviewers { nodes { username } }
+      reviewers { nodes { username mergeRequestInteraction { reviewState } } }
       diffStatsSummary { additions deletions fileCount }
       commitCount
       commits(first: 100) { nodes { sha committedDate message author { username } authorName } }
@@ -47,7 +47,7 @@ type GitlabMr = {
   detailedMergeStatus: string
   approved: boolean
   approvedBy: { nodes: { username: string }[] }
-  reviewers: { nodes: { username: string }[] }
+  reviewers: { nodes: { username: string; mergeRequestInteraction: { reviewState: string } | null }[] }
   diffStatsSummary: { additions: number; deletions: number; fileCount: number }
   commitCount: number | null
   commits: { nodes: { sha: string; committedDate: string; message: string; author: Username; authorName: string }[] }
@@ -80,6 +80,22 @@ type GitlabAnswer = {
 type GitlabApprovals = { approved_by?: { user: { username: string }; approved_at?: string }[] }
 
 const STATES: Record<GitlabMr['state'], PrState> = { opened: 'open', locked: 'open', closed: 'closed', merged: 'merged' }
+
+// GitLab keeps one state per reviewer, with no time. UNREVIEWED and REVIEW_STARTED are no review yet.
+const REVIEW_STATES: Record<string, PrReview['state']> = {
+  APPROVED: 'approved',
+  REQUESTED_CHANGES: 'changes-requested',
+  REVIEWED: 'commented',
+  UNAPPROVED: 'dismissed',
+}
+
+function submittedReviews(mr: GitlabMr): PrReview[] {
+  return mr.reviewers.nodes.flatMap(({ username, mergeRequestInteraction }) => {
+    const state = REVIEW_STATES[mergeRequestInteraction?.reviewState ?? '']
+
+    return state ? [{ author: username, state, submittedAt: null }] : []
+  })
+}
 
 const JOB_OUTCOMES: Record<string, JobOutcome | null> = {
   SUCCESS: 'passed',
@@ -152,6 +168,7 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
     blocked: state === 'open' ? gitlabBlockedReason(mr.detailedMergeStatus) : null,
     reviewers: reviewers.filter(name => name !== author),
     approvals: approvers.map(user => ({ user, approvedAt: null })),
+    reviews: submittedReviews(mr),
     commits: mr.commits.nodes
       .map(commit => ({ sha: commit.sha, author: commit.author?.username ?? commit.authorName, committedAt: commit.committedDate }))
       .reverse(),

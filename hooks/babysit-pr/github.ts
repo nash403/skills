@@ -1,4 +1,4 @@
-import type { PrSnapshot, PrState } from '../../types'
+import type { PrReview, PrSnapshot, PrState } from '../../types'
 import { ciState, githubBlockedReason } from './rules'
 import type { JobOutcome } from './rules'
 
@@ -114,6 +114,22 @@ function loginOf(user: Login) {
 
 const STATES: Record<GithubPr['state'], PrState> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' }
 
+// A PENDING review is the viewer's own draft, not submitted yet.
+const REVIEW_STATES: Record<string, PrReview['state']> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes-requested',
+  COMMENTED: 'commented',
+  DISMISSED: 'dismissed',
+}
+
+function submittedReviews(pr: GithubPr): PrReview[] {
+  return pr.reviews.nodes.flatMap(review => {
+    const state = REVIEW_STATES[review.state]
+
+    return state ? [{ author: loginOf(review.author), state, submittedAt: review.submittedAt }] : []
+  })
+}
+
 function isApproved(pr: GithubPr) {
   if (pr.reviewDecision !== null) {
     return pr.reviewDecision === 'APPROVED'
@@ -188,6 +204,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
 
         return review.commit ? { user, sha: review.commit.oid } : { user, approvedAt: review.submittedAt }
       }),
+    reviews: submittedReviews(pr),
     commits: pr.commits.nodes.map(({ commit }) => {
       const firstAuthor = commit.authors.nodes[0]
 

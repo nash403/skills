@@ -31,6 +31,7 @@ const OPEN_PR: PrSnapshot = {
   blocked: null,
   reviewers: ['bob'],
   approvals: [],
+  reviews: [],
   commits: [
     { sha: 'c1', author: 'ana', committedAt: '2026-11-10T10:00:00Z' },
     { sha: 'c2', author: 'ana', committedAt: '2026-11-12T10:00:00Z' },

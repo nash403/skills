@@ -21,7 +21,13 @@ const ANSWER = {
         detailedMergeStatus: 'DISCUSSIONS_NOT_RESOLVED',
         approved: true,
         approvedBy: { nodes: [{ username: 'bob' }] },
-        reviewers: { nodes: [{ username: 'cid', mergeRequestInteraction: { reviewState: 'UNREVIEWED', approved: false } }] },
+        reviewers: {
+          nodes: [
+            { username: 'cid', mergeRequestInteraction: { reviewState: 'UNREVIEWED', approved: false } },
+            { username: 'dee', mergeRequestInteraction: { reviewState: 'REQUESTED_CHANGES', approved: false } },
+            { username: 'eve', mergeRequestInteraction: null },
+          ],
+        },
         diffStatsSummary: { additions: 1482, deletions: 82, fileCount: 24 },
         commitCount: 2,
         commits: {
@@ -81,8 +87,9 @@ test('a GitLab answer reads as a PR snapshot', () => {
     changedFiles: 24,
     ci: 'pending',
     blocked: 'threads',
-    reviewers: ['cid', 'bob'],
+    reviewers: ['cid', 'dee', 'eve', 'bob'],
     approvals: [{ user: 'bob', approvedAt: null }],
+    reviews: [{ author: 'dee', state: 'changes-requested', submittedAt: null }],
     commits: [
       { sha: 'c1', author: 'ana', committedAt: '2026-11-10T08:00:00+01:00' },
       { sha: 'c2', author: 'Ana B', committedAt: '2026-11-12T10:00:00+01:00' },

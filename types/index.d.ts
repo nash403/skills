@@ -53,6 +53,9 @@ export type PrApproval = { user: string; sha: string } | { user: string; approve
 
 export type PrCommit = { sha: string; author: string; committedAt: string }
 
+// A submitted review. GitLab gives a reviewer's state only, with no time.
+export type PrReview = { author: string; state: 'approved' | 'changes-requested' | 'commented' | 'dismissed'; submittedAt: string | null }
+
 export type PrSnapshot = {
   url: string
   title: string
@@ -72,6 +75,7 @@ export type PrSnapshot = {
   blocked: BlockedReason | null
   reviewers: string[]
   approvals: PrApproval[]
+  reviews: PrReview[]
   commits: PrCommit[]
   threads: PrThread[]
   hasMoreThreads: boolean

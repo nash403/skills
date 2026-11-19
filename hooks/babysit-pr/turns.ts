@@ -116,11 +116,42 @@ function viewerPrSteps(pr: PrSnapshot): NextStep[] {
   }
 
   if (concerning.length === 0 && !pr.isApproved) {
-    const isReviewed = pr.threads.length > 0 || pr.approvals.length > 0
+    // On GitHub the author's replies in threads are reviews too.
+    const isReviewed = pr.threads.length > 0 || pr.approvals.length > 0 || pr.reviews.some(review => review.author !== pr.author)
     steps.push({ actor: 'Reviewers', action: isReviewed ? 'approve, no open thread' : 'not reviewed yet' })
   }
 
   return steps
+}
+
+// The viewer's newest review: GitHub lists them oldest first, GitLab keeps one per reviewer.
+function lastViewerReview(pr: PrSnapshot) {
+  return pr.reviews.filter(review => review.author === pr.viewer).at(-1)
+}
+
+// On a peer's PR with no open thread of the viewer's and no approval from them: what their threads and reviews call for.
+function settledPeerStep(pr: PrSnapshot): NextStep {
+  const hasViewerThreads = pr.threads.some(thread => concernsViewer(pr, thread))
+  const review = lastViewerReview(pr)
+  const committedAt = headCommittedAt(pr)
+
+  if (!review && !hasViewerThreads) {
+    return { actor: 'You', action: 'not reviewed yet' }
+  }
+
+  if (review?.submittedAt && committedAt !== null && committedAt > Date.parse(review.submittedAt)) {
+    return { actor: 'You', action: 'code pushed since your review' }
+  }
+
+  if (hasViewerThreads) {
+    return { actor: 'You', action: 'ready to approve, all your threads resolved' }
+  }
+
+  if (review?.state === 'changes-requested') {
+    return { actor: 'Author', action: 'address your review' }
+  }
+
+  return { actor: 'You', action: 'ready to approve' }
 }
 
 function peerPrSteps(pr: PrSnapshot): NextStep[] {
@@ -129,7 +160,6 @@ function peerPrSteps(pr: PrSnapshot): NextStep[] {
   const mentioned = countTurns(concerning, 'mentioned')
   const unanswered = countTurns(concerning, 'theirs')
   const hasViewerApproved = pr.approvals.some(approval => approval.user === pr.viewer)
-  const hasViewerThreads = pr.threads.some(thread => concernsViewer(pr, thread))
   const steps: NextStep[] = []
 
   if (authorReplied > 0) {
@@ -145,7 +175,7 @@ function peerPrSteps(pr: PrSnapshot): NextStep[] {
   }
 
   if (concerning.length === 0 && !hasViewerApproved) {
-    steps.push({ actor: 'You', action: hasViewerThreads ? 'ready to approve, all your threads resolved' : 'not reviewed yet' })
+    steps.push(settledPeerStep(pr))
   }
 
   if (unanswered > 0) {

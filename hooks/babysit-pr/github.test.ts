@@ -33,6 +33,8 @@ const ANSWER = {
           nodes: [
             { databaseId: 1, author: { login: 'bob' }, state: 'COMMENTED', submittedAt: '2026-11-10T09:00:00Z', commit: { oid: 'c1' } },
             { databaseId: 4, author: { login: 'ana' }, state: 'COMMENTED', submittedAt: '2026-11-11T12:00:00Z', commit: { oid: 'c1' } },
+            { databaseId: 5, author: { login: 'dee' }, state: 'DISMISSED', submittedAt: '2026-11-11T13:00:00Z', commit: { oid: 'c1' } },
+            { databaseId: 6, author: { login: 'bob' }, state: 'PENDING', submittedAt: null, commit: { oid: 'c2' } },
           ],
         },
         participants: { nodes: [{ login: 'ana' }, { login: 'bob' }] },
@@ -110,6 +112,11 @@ test('a GitHub answer reads as a PR snapshot', () => {
     blocked: 'approvals',
     reviewers: ['cid', 'bob', 'dee'],
     approvals: [{ user: 'bob', sha: 'c1' }],
+    reviews: [
+      { author: 'bob', state: 'commented', submittedAt: '2026-11-10T09:00:00Z' },
+      { author: 'ana', state: 'commented', submittedAt: '2026-11-11T12:00:00Z' },
+      { author: 'dee', state: 'dismissed', submittedAt: '2026-11-11T13:00:00Z' },
+    ],
     commits: [
       { sha: 'c1', author: 'ana', committedAt: '2026-11-10T08:00:00Z' },
       { sha: 'c2', author: 'Bot', committedAt: '2026-11-12T08:00:00Z' },
