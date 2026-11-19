@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Color, EngineInterface, Register, ToolCallResult } from 'claude-code'
+import type { Color, EngineInterface, Register, RenderSurface, ToolCallResult } from 'claude-code'
 
 import type { ChangeRequest, Divergence, GitSnapshot } from '../../types'
 
@@ -276,6 +276,17 @@ async function noteEdit($: EngineInterface, result: ToolCallResult, path: string
   return result
 }
 
+// The band shows short names (a cut branch, a folder's last part): a click copies the whole one, and the toast shows it.
+async function copyText($: EngineInterface, text: string, surface: RenderSurface) {
+  const copied = await $.ui.copy({ text, surface })
+
+  $.ui.toast(copied.isCopied ? `Copied ${text}` : `Could not copy ${text}`)
+}
+
+async function copyCwd($: EngineInterface, surface: RenderSurface) {
+  await copyText($, await $.session.cwd(), surface)
+}
+
 function withTilde(path: string, home: string | undefined) {
   return home && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
 }
@@ -345,9 +356,9 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" width="100%">
         <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
-          <Text dimColor>
+          <Button key="folder" plain dimColor onPress={press => void copyCwd($, press.surface)}>
             {git.isLinkedWorktree ? '🌿' : '📁'} {git.folder}
-          </Text>
+          </Button>
           {hasEditedElsewhere && (
             <Button
               key="dirs"
@@ -358,11 +369,13 @@ export const register: Register = on => {
             />
           )}
           {branch !== null && (
-            <Text>
-              <Text bold>⎇ {shorten(branch, Math.max(16, Math.floor(columns * 0.3)))}</Text>
+            <Box flexDirection="row">
+              <Button key="branch" plain onPress={press => void copyText($, branch, press.surface)}>
+                <Text bold>⎇ {shorten(branch, Math.max(16, Math.floor(columns * 0.3)))}</Text>
+              </Button>
               {git.isDetached && <Text dimColor> (detached)</Text>}
               {base && <Text dimColor> → {shorten(base, Math.max(12, Math.floor(columns * 0.2)))}</Text>}
-            </Text>
+            </Box>
           )}
           {request && (
             <Link href={request.url}>

@@ -43,14 +43,14 @@ const MAIN_UP_TO_DATE: Repo = {
 
 test('a stacked branch behind its base offers a cascading rebase', async ($, on) => {
   const submitted: string[] = []
-  const statuses = stubEngine(on, STACKED_BRANCH, submitted)
+  const { statuses } = stubEngine(on, STACKED_BRANCH, submitted)
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
 
-    expect((await ui.find({ type: 'Text', text: /app/ }))?.text).toBe('🌿 app')
+    expect((await ui.find({ key: 'folder' }))?.text).toBe('🌿 app')
     expect((await ui.find({ type: 'Text', text: /PR/ }))?.text).toBe('PR #12')
     expect(await ui.find({ type: 'Link' })).toMatchObject({ props: { href: 'https://gitlab.com/team/app/-/merge_requests/12' } })
     expect((await ui.find({ type: 'Text', text: /^↑$/ }))?.text).toBe('↑')
@@ -67,8 +67,8 @@ test('a stacked branch behind its base offers a cascading rebase', async ($, on)
   expect(submitted[0]).toContain('Rebase by default, but merge `feat/parent` into it')
 })
 
-test('a long branch name is cut in its middle', async ($, on) => {
-  stubEngine(on, {
+test('a long branch name is cut in its middle and copied whole on click', async ($, on) => {
+  const { copies, toasts } = stubEngine(on, {
     ...STACKED_BRANCH,
     'git branch --show-current': 'feat/KLA-1234-a-very-long-description-nobody-reads-whole',
   }, [])
@@ -81,6 +81,10 @@ test('a long branch name is cut in its middle', async ($, on) => {
   expect(branch?.text).toContain('feat/KLA-1234')
   expect(branch?.text).toContain('…')
   expect(branch?.text).toContain('whole')
+
+  await ui.press({ key: 'branch' })
+  expect(copies.at(-1)).toBe('feat/KLA-1234-a-very-long-description-nobody-reads-whole')
+  expect(toasts.at(-1)).toBe('Copied feat/KLA-1234-a-very-long-description-nobody-reads-whole')
   await ui.unmount()
 })
 
@@ -103,14 +107,18 @@ test('a branch with no PR offers to open one', async ($, on) => {
   expect(submitted[0]).toContain('give me its web link')
 })
 
-test('the main branch in sync shows no rebase or new PR button', async ($, on) => {
-  stubEngine(on, MAIN_UP_TO_DATE, [])
+test('the main branch in sync shows no rebase or new PR button, and the folder copies its path', async ($, on) => {
+  const { copies, toasts } = stubEngine(on, MAIN_UP_TO_DATE, [])
 
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /app/ }))?.text).toBe('📁 app')
+  expect((await ui.find({ key: 'folder' }))?.text).toBe('📁 app')
+
+  await ui.press({ key: 'folder' })
+  expect(copies.at(-1)).toBe('/work/app')
+  expect(toasts.at(-1)).toBe('Copied /work/app')
   expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.text).toBe('✓')
   expect(await ui.find({ key: 'rebase' })).toBeUndefined()
   expect(await ui.find({ key: 'new-pr' })).toBeUndefined()
@@ -153,6 +161,18 @@ test('edits outside the session folder list their folders on click', async ($, o
 
 function stubEngine(on: any, repo: Repo, submitted: string[]) {
   const statuses: (string | undefined)[] = []
+  const copies: string[] = []
+  const toasts: string[] = []
+  on('ui.copy', (_: unknown, e: { text: string }) => {
+    copies.push(e.text)
+
+    return { value: { isCopied: true } }
+  })
+  on('ui.toast', (_: unknown, e: { text: string }) => {
+    toasts.push(e.text)
+
+    return { value: undefined }
+  })
   on('ui.status', (_: unknown, e: { text: string | undefined }) => {
     statuses.push(e.text)
 
@@ -175,5 +195,5 @@ function stubEngine(on: any, repo: Repo, submitted: string[]) {
     return { text: e.text }
   })
 
-  return statuses
+  return { statuses, copies, toasts }
 }
