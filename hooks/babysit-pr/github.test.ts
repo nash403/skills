@@ -119,7 +119,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
     ],
     commits: [
       { sha: 'c1', author: 'ana', committedAt: '2026-11-10T08:00:00Z' },
-      { sha: 'c2', author: 'Bot', committedAt: '2026-11-12T08:00:00Z' },
+      { sha: 'c2', author: null, committedAt: '2026-11-12T08:00:00Z' },
     ],
     threads: [
       {
@@ -149,6 +149,14 @@ test('a merged GitHub PR with no checks reads no CI and no block', () => {
   Object.assign(pr.statusCheckRollup.nodes[0]!.commit, { statusCheckRollup: null })
 
   expect(parseGithubPr(answer)).toMatchObject({ state: 'merged', ci: 'none', blocked: null, isApproved: true })
+})
+
+test('a GitHub PR whose rollup has no check yet reads starting', () => {
+  const answer = structuredClone(ANSWER)
+  const pr = answer.data.repository.pullRequest
+  Object.assign(pr.statusCheckRollup.nodes[0]!.commit.statusCheckRollup, { contexts: { nodes: [] } })
+
+  expect(parseGithubPr(answer)).toMatchObject({ ci: 'starting' })
 })
 
 test('a GitHub PR with no review rule is approved once someone approves and nobody asks for changes', () => {

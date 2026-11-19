@@ -55,7 +55,8 @@ export type PrThread = {
 // is gone). GitLab says only when, and only through its REST API.
 export type PrApproval = { user: string; reviewId: number; sha: string | null; approvedAt: string | null } | { user: string; approvedAt: string | null }
 
-export type PrCommit = { sha: string; author: string; committedAt: string }
+// `author` is null when the commit's author has no account on the platform.
+export type PrCommit = { sha: string; author: string | null; committedAt: string }
 
 // A submitted review. GitLab gives a reviewer's state only, with no time.
 export type PrReview = { author: string; state: 'approved' | 'changes-requested' | 'commented' | 'dismissed'; submittedAt: string | null }

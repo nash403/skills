@@ -6,7 +6,7 @@ import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
 import { clearChanges, forgetPr, markShown, recordRead } from './watched'
 
-const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-5' })
+const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-6' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })

@@ -43,8 +43,7 @@ const CHIP_COLORS: Record<StatusChip, Color> = {
 
 const IMPORTANCE_COLORS: Record<TriageImportance, Color> = { high: 'error', medium: 'warning', low: 'inactive' }
 
-const CI_TEXTS: Record<CiState, { text: string; color: Color }> = {
-  none: { text: 'no CI', color: 'inactive' },
+const CI_TEXTS: Record<Exclude<CiState, 'none'>, { text: string; color: Color }> = {
   starting: { text: 'CI starting', color: 'warning' },
   pending: { text: 'CI pending', color: 'warning' },
   ok: { text: 'CI ok', color: 'success' },
@@ -107,7 +106,7 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
 function stateLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const chip = statusChip(pr)
-  const ci = CI_TEXTS[pr.ci]
+  const ci = pr.ci === 'none' ? null : CI_TEXTS[pr.ci]
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
@@ -115,7 +114,7 @@ function stateLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
         {` ${chip} `}
       </Text>
       {isPushedSinceApproval(pr) && <Text color="warning">⚠ pushed since your approval</Text>}
-      {pr.state === 'open' && <Text color={ci.color}>{ci.text}</Text>}
+      {pr.state === 'open' && ci && <Text color={ci.color}>{ci.text}</Text>}
       {pr.isDraft && <Text color="inactive">draft</Text>}
       {pr.blocked && <Text color="error">blocked: {pr.blocked}</Text>}
       {isSkipCi(pr.title, pr.headMessage) && <Text color="warning">skip CI</Text>}

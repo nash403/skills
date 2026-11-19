@@ -274,6 +274,21 @@ test('the PR of the branch and the PRs the session shows fill the pane, read onl
   }
 })
 
+test('a PR with no CI shows no CI state', async ($, on) => {
+  const clock = mock.clock(on)
+  const noRollup = { statusCheckRollup: { nodes: [{ commit: { message: 'Fix', statusCheckRollup: null } }] } }
+  stubEngine(on, [], { 12: githubAnswer(12, noRollup) })
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^acme\/app#12/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^(CI|no CI)/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('the arrows switch PRs, refresh reads one again and remove keeps it out', async ($, on) => {
   const clock = mock.clock(on)
   const { calls } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }])

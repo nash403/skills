@@ -111,7 +111,7 @@ test('a GitLab answer reads as a PR snapshot', () => {
     reviews: [{ author: 'dee', state: 'changes-requested', submittedAt: null }],
     commits: [
       { sha: 'c1', author: 'ana', committedAt: '2026-11-10T08:00:00+01:00' },
-      { sha: 'c2', author: 'Ana B', committedAt: '2026-11-12T10:00:00+01:00' },
+      { sha: 'c2', author: null, committedAt: '2026-11-12T10:00:00+01:00' },
     ],
     threads: [
       {
@@ -158,6 +158,14 @@ test('a GitLab pipeline with no job that counts reads its own status', () => {
   expect(parseGitlabMr(answer)).toMatchObject({ ci: 'starting' })
   Object.assign(mr.headPipeline, { status: 'SUCCESS' })
   expect(parseGitlabMr(answer)).toMatchObject({ ci: 'ok' })
+})
+
+test('a GitLab pipeline with no job yet reads starting', () => {
+  const answer = structuredClone(ANSWER)
+  const mr = answer.data.project.mergeRequest
+  Object.assign(mr, { headPipeline: { status: 'CREATED', jobs: { nodes: [] } } })
+
+  expect(parseGitlabMr(answer)).toMatchObject({ ci: 'starting' })
 })
 
 test('GitLab approval times come from the approvals endpoint', () => {

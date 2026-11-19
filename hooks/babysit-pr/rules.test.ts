@@ -57,7 +57,7 @@ function thread(id: string, isResolved: boolean, ...comments: [author: string, c
 test('CI reads ok, starting, pending or error from its jobs', () => {
   expect(ciState(null)).toBe('none')
   expect(ciState(['passed', 'passed'])).toBe('ok')
-  expect(ciState([])).toBe('ok')
+  expect(ciState([])).toBe('starting')
   expect(ciState(['waiting', 'running'])).toBe('starting')
   expect(ciState(['passed', 'running', 'waiting'])).toBe('pending')
   expect(ciState(['passed', 'failed', 'running'])).toBe('error')
@@ -114,6 +114,16 @@ test('the status chip takes the first state that matches', () => {
   expect(statusChip({ ...OPEN_PR, threads: [openThread, closedThread] })).toBe('reviewed')
   expect(statusChip({ ...OPEN_PR, threads: [closedThread] })).toBe('resolved')
   expect(statusChip(OPEN_PR)).toBe('opened')
+})
+
+test('a review without threads moves the PR past opened, and a push after it reads updated', () => {
+  const changesRequested = { author: 'bob', state: 'changes-requested', submittedAt: '2026-11-11T10:00:00Z' } as const
+  const dismissedLater = { author: 'bob', state: 'dismissed', submittedAt: '2026-11-13T10:00:00Z' } as const
+
+  expect(statusChip({ ...OPEN_PR, reviews: [{ ...changesRequested, state: 'commented' }], heads: heads('p1', VERSION_TIMES) })).toBe('reviewed')
+  expect(statusChip({ ...OPEN_PR, reviews: [{ ...changesRequested, submittedAt: null }] })).toBe('reviewed')
+  expect(statusChip({ ...OPEN_PR, reviews: [changesRequested], heads: heads('p2', VERSION_TIMES) })).toBe('updated')
+  expect(statusChip({ ...OPEN_PR, reviews: [changesRequested, dismissedLater], heads: heads('p2', VERSION_TIMES) })).toBe('reviewed')
 })
 
 test('a peer PR warns when code was pushed after my approval', () => {
@@ -183,5 +193,18 @@ test('participants list the author then the reviewers, with approvals and commit
     { name: 'ana', role: 'author', hasApproved: false, hasCommits: true },
     { name: 'bob', role: 'reviewer', hasApproved: true, hasCommits: true },
     { name: 'cid', role: 'reviewer', hasApproved: false, hasCommits: false },
+  ])
+})
+
+test('a commit author with an account is a participant, one without is skipped', () => {
+  const pr: PrSnapshot = {
+    ...OPEN_PR,
+    reviewers: [],
+    commits: [...OPEN_PR.commits, { sha: 'c3', author: 'eve', committedAt: '2026-11-12T11:00:00Z' }, { sha: 'c4', author: null, committedAt: '2026-11-12T12:00:00Z' }],
+  }
+
+  expect(participants(pr)).toEqual([
+    { name: 'ana', role: 'author', hasApproved: false, hasCommits: true },
+    { name: 'eve', role: 'reviewer', hasApproved: false, hasCommits: true },
   ])
 })

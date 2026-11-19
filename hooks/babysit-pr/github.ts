@@ -18,7 +18,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
       reviews(last: 50) { nodes { author { login } state submittedAt commit { oid } } }
       commits(last: 100) {
         totalCount
-        nodes { commit { oid committedDate authors(first: 5) { nodes { user { login } name } } } }
+        nodes { commit { oid committedDate authors(first: 1) { nodes { user { login } } } } }
       }
       statusCheckRollup: commits(last: 1) {
         nodes { commit { message statusCheckRollup {
@@ -70,7 +70,7 @@ type GithubPr = {
   reviews: { nodes: Review[] }
   commits: {
     totalCount: number
-    nodes: { commit: { oid: string; committedDate: string; authors: { nodes: { user: Login; name: string }[] } } }[]
+    nodes: { commit: { oid: string; committedDate: string; authors: { nodes: { user: Login }[] } } }[]
   }
   statusCheckRollup: {
     nodes: { commit: { message: string; statusCheckRollup: { contexts: { nodes: CheckContext[] } } | null } }[]
@@ -233,7 +233,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
 
       return {
         sha: commit.oid,
-        author: firstAuthor?.user?.login ?? firstAuthor?.name ?? 'unknown',
+        author: firstAuthor?.user?.login ?? null,
         committedAt: commit.committedDate,
       }
     }),

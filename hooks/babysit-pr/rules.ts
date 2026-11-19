@@ -1,5 +1,5 @@
 import type { BlockedReason, CiState, PrSnapshot } from '../../types'
-import { commentPoint, isCodeChangedFrom, isCodePushedSince, newestThreadComment, viewerApproval } from './pushes'
+import { commentPoint, isCodeChangedFrom, isCodePushedSince, newestPoint, viewerApproval } from './pushes'
 
 export type JobOutcome = 'passed' | 'failed' | 'running' | 'waiting'
 
@@ -15,7 +15,7 @@ export type StatusChip =
 
 export type Participant = { name: string; role: 'author' | 'reviewer'; hasApproved: boolean; hasCommits: boolean }
 
-// Jobs are `null` when the head commit has no CI at all.
+// Jobs are `null` when the head commit has no CI at all, and empty when the CI exists but has no job yet.
 export function ciState(jobs: readonly JobOutcome[] | null): CiState {
   if (jobs === null) {
     return 'none'
@@ -23,6 +23,10 @@ export function ciState(jobs: readonly JobOutcome[] | null): CiState {
 
   if (jobs.includes('failed')) {
     return 'error'
+  }
+
+  if (jobs.length === 0) {
+    return 'starting'
   }
 
   const isRunning = jobs.some(job => job === 'running' || job === 'waiting')
@@ -97,11 +101,13 @@ export function threadCounts({ threads }: PrSnapshot) {
   return { open: threads.filter(thread => !thread.isResolved).length, total: threads.length }
 }
 
-// Code pushed after the newest comment, a rebase alone left out.
-function isUpdatedSinceLastComment(pr: PrSnapshot) {
-  const comment = newestThreadComment(pr)
+// Code pushed after the newest thread comment or review, a rebase alone left out.
+function isUpdatedSinceLastFeedback(pr: PrSnapshot) {
+  const comments = pr.threads.flatMap(thread => thread.comments.map(commentPoint))
+  const reviews = pr.reviews.flatMap(({ submittedAt }) => (submittedAt === null ? [] : [{ at: submittedAt, headSha: null }]))
+  const feedback = newestPoint([...comments, ...reviews])
 
-  return comment !== undefined && isCodePushedSince(pr, commentPoint(comment))
+  return feedback !== null && isCodePushedSince(pr, feedback)
 }
 
 export function statusChip(pr: PrSnapshot): StatusChip {
@@ -115,7 +121,7 @@ export function statusChip(pr: PrSnapshot): StatusChip {
     return open > 0 ? 'approved + threads' : 'approved'
   }
 
-  if (isUpdatedSinceLastComment(pr)) {
+  if (isUpdatedSinceLastFeedback(pr)) {
     return 'updated'
   }
 
@@ -123,7 +129,11 @@ export function statusChip(pr: PrSnapshot): StatusChip {
     return 'reviewed'
   }
 
-  return total > 0 ? 'resolved' : 'opened'
+  if (total > 0) {
+    return 'resolved'
+  }
+
+  return pr.reviews.length > 0 ? 'reviewed' : 'opened'
 }
 
 // On a peer's PR the viewer approved: was code pushed since, a rebase alone left out?
@@ -144,12 +154,13 @@ export function isPushedSinceApproval(pr: PrSnapshot) {
 export function participants(pr: PrSnapshot): Participant[] {
   const commenters = pr.threads.flatMap(thread => thread.comments.map(comment => comment.author))
   const approvers = pr.approvals.map(approval => approval.user)
-  const reviewers = [...new Set([...pr.reviewers, ...approvers, ...commenters])].filter(name => name !== pr.author)
+  const committers = pr.commits.flatMap(commit => commit.author ?? [])
+  const reviewers = [...new Set([...pr.reviewers, ...approvers, ...commenters, ...committers])].filter(name => name !== pr.author)
 
   return [pr.author, ...reviewers].map(name => ({
     name,
     role: name === pr.author ? 'author' : 'reviewer',
     hasApproved: approvers.includes(name),
-    hasCommits: pr.commits.some(commit => commit.author === name),
+    hasCommits: committers.includes(name),
   }))
 }

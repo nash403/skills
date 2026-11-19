@@ -16,7 +16,7 @@ export const GITLAB_MR_QUERY = `query($project: ID!, $iid: String!) {
       reviewers { nodes { username mergeRequestInteraction { reviewState } } }
       diffStatsSummary { additions deletions fileCount }
       commitCount
-      commits(first: 100) { nodes { sha committedDate message author { username } authorName } }
+      commits(first: 100) { nodes { sha committedDate message author { username } } }
       headPipeline {
         status
         jobs(first: 100, retried: false) { nodes { status allowFailure } }
@@ -51,7 +51,7 @@ type GitlabMr = {
   reviewers: { nodes: { username: string; mergeRequestInteraction: { reviewState: string } | null }[] }
   diffStatsSummary: { additions: number; deletions: number; fileCount: number }
   commitCount: number | null
-  commits: { nodes: { sha: string; committedDate: string; message: string; author: Username; authorName: string }[] }
+  commits: { nodes: { sha: string; committedDate: string; message: string; author: Username }[] }
   headPipeline: Pipeline | null
   discussions: {
     pageInfo: { hasNextPage: boolean }
@@ -187,7 +187,7 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
     approvals: approvers.map(user => ({ user, approvedAt: null })),
     reviews: submittedReviews(mr),
     commits: mr.commits.nodes
-      .map(commit => ({ sha: commit.sha, author: commit.author?.username ?? commit.authorName, committedAt: commit.committedDate }))
+      .map(commit => ({ sha: commit.sha, author: commit.author?.username ?? null, committedAt: commit.committedDate }))
       .reverse(),
     threads: mr.discussions.nodes
       .filter(discussion => discussion.resolvable)
