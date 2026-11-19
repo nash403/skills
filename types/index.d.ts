@@ -172,6 +172,7 @@ declare module 'claude-code' {
       // By PR key.
       babysitSummaries: Shaped<Record<string, PrSummary>>
       sessionTime: Shaped<SessionTime | null>
+      isSessionTimeOpen: boolean
     }
   }
 }

@@ -33,19 +33,28 @@ const CONTENT = [
   '{"type":"assistant","timest',
 ].join('')
 
-test('the gauge shows the total and each slice taken', async ($, on) => {
+test('a line with the total and the idle share unfolds into each slice taken', async ($, on) => {
   const reads = stubEngine(on, CONTENT)
 
   await $.session.start({ cwd: '/work/app', surface: 'terminal', isInteractive: true })
 
   const ui = await $.ui.mount(BAND)
 
-  expect((await ui.find({ type: 'Text', text: /⏱/ }))?.text).toBe('⏱ 31m')
-  expect((await ui.find({ type: 'Text', text: /agent/ }))?.text).toBe('■ agent 11m 35%')
-  expect((await ui.find({ type: 'Text', text: /idle/ }))?.text).toBe('■ idle 20m 65%')
+  expect((await ui.find({ key: 'session-time' }))?.text).toBe('▸ ⏱ 31m · idle 65%')
+  expect(await ui.find({ type: 'Text', text: /■ agent/ })).toBeUndefined()
+
+  await ui.press({ key: 'session-time' })
+
+  expect((await ui.find({ key: 'session-time' }))?.text).toBe('▾ ⏱ 31m · idle 65%')
+  expect((await ui.find({ type: 'Text', text: /■ agent/ }))?.text).toBe('■ agent 11m 35%')
+  expect((await ui.find({ type: 'Text', text: /■ idle/ }))?.text).toBe('■ idle 20m 65%')
   expect(await ui.find({ type: 'Text', text: /subagents/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /you/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /waiting on you/ })).toBeUndefined()
   expect(reads.every(read => read.path === TRANSCRIPT)).toBe(true)
+
+  await ui.press({ key: 'session-time' })
+
+  expect(await ui.find({ type: 'Text', text: /■ agent/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -56,7 +65,7 @@ test('no gauge before the first answer', async ($, on) => {
 
   const ui = await $.ui.mount(BAND)
 
-  expect(await ui.find({ type: 'Text', text: /⏱/ })).toBeUndefined()
+  expect(await ui.find({ key: 'session-time' })).toBeUndefined()
   await ui.unmount()
 })
 

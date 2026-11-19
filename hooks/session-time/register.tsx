@@ -5,6 +5,7 @@ import type { Slice } from '../../types'
 import { addLines, cells, formatDuration, newTimeline } from './timeline'
 
 const sessionTime = atom({ plugin: 'nash403-skills', key: 'sessionTime' } as const, null, { shape: 'time-1' })
+const isSessionTimeOpen = atom({ plugin: 'nash403-skills', key: 'isSessionTimeOpen' } as const, false)
 
 const EVERY_MS = 15_000
 const CHUNK_BYTES = 4 * 1024 * 1024
@@ -14,7 +15,7 @@ const SLICES: readonly Slice[] = ['work', 'agents', 'you', 'idle']
 const LOOK: Record<Slice, { label: string; color: Color; cell: string }> = {
   work: { label: 'agent', color: 'claude', cell: '█' },
   agents: { label: 'subagents', color: 'merged', cell: '█' },
-  you: { label: 'you', color: 'suggestion', cell: '█' },
+  you: { label: 'waiting on you', color: 'suggestion', cell: '█' },
   idle: { label: 'idle', color: 'inactive', cell: '░' },
 }
 
@@ -94,7 +95,11 @@ export function refreshSessionTimeAfterTurn($: EngineInterface) {
   void refresh($)
 }
 
-// The gauge row, or null before the first answer.
+function percentOf(ms: number, total: number) {
+  return `${Math.round((ms / total) * 100)}%`
+}
+
+// One quiet line, the total and the idle share; a click unfolds the gauge and each slice under it.
 export async function drawSessionTime($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
   const time = await read($, sessionTime)
 
@@ -102,32 +107,39 @@ export async function drawSessionTime($: EngineInterface, e: RenderInput<'AboveP
     return null
   }
 
-  const { Box, Text } = $.ui.resolve(e)
+  const { Box, Button, Text } = $.ui.resolve(e)
   const total = time.endedAt - time.startedAt
-  const shown = SLICES.filter(slice => time.ms[slice] > 0)
-  const legend = shown.map(slice => {
-    const percent = Math.round((time.ms[slice] / total) * 100)
+  const isOpen = await read($, isSessionTimeOpen)
+  const summary = (
+    <Button key="session-time" plain dimColor={!isOpen} onPress={() => void update($, isSessionTimeOpen, open => !open)}>
+      {isOpen ? '▾' : '▸'} ⏱ {formatDuration(total)} · idle {percentOf(time.ms.idle, total)}
+    </Button>
+  )
 
-    return { slice, text: `${LOOK[slice].label} ${formatDuration(time.ms[slice])}`, percent: `${percent}%` }
-  })
-  const totalText = `⏱ ${formatDuration(total)}`
-  const legendWidth = legend.reduce((sum, item) => sum + item.text.length + item.percent.length + 5, 0)
-  const width = Math.max(10, Math.min(48, e.props.bodyColumns - totalText.length - legendWidth - 4))
-  const shares = cells(time.ms, width)
+  if (!isOpen) {
+    return summary
+  }
+
+  const shares = cells(time.ms, Math.max(10, Math.min(60, e.props.bodyColumns - 2)))
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
-      <Text bold>{totalText}</Text>
-      <Text>
-        {SLICES.map(slice => (
-          <Text color={LOOK[slice].color}>{LOOK[slice].cell.repeat(shares[slice])}</Text>
-        ))}
-      </Text>
-      {legend.map(({ slice, text, percent }) => (
+    <Box flexDirection="column" width="100%">
+      {summary}
+      <Box paddingLeft={2}>
         <Text>
-          <Text color={LOOK[slice].color}>■</Text> {text} <Text dimColor>{percent}</Text>
+          {SLICES.map(slice => (
+            <Text color={LOOK[slice].color}>{LOOK[slice].cell.repeat(shares[slice])}</Text>
+          ))}
         </Text>
-      ))}
+      </Box>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
+        {SLICES.filter(slice => time.ms[slice] > 0).map(slice => (
+          <Text>
+            <Text color={LOOK[slice].color}>■</Text> {LOOK[slice].label} {formatDuration(time.ms[slice])}{' '}
+            <Text dimColor>{percentOf(time.ms[slice], total)}</Text>
+          </Text>
+        ))}
+      </Box>
     </Box>
   )
 }

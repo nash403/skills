@@ -48,7 +48,7 @@ export const register: Register = (on, options) => {
     const { Box } = $.ui.resolve(e)
 
     return (
-      <Box flexDirection="column" width="100%">
+      <Box flexDirection="column" rowGap={1} width="100%">
         {git}
         {time}
       </Box>
