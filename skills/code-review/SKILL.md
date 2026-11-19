@@ -47,7 +47,7 @@ This step is done when the baseline is ready to paste. The baseline is these sme
 
 ### 4. Spawn both sub-agents in parallel
 
-Start each with a fresh context window.
+Start each with a fresh context window, one effort level above the one this skill runs at: low → medium → high → xhigh (Claude Code's names; use the equivalent reasoning-effort levels of your harness or model). Never go above `xhigh`: if this skill already runs at `xhigh`, use `xhigh`. If your current effort level isn't stated in your context, use `high`.
 
 **Standards sub-agent prompt** should include:
 
