@@ -374,6 +374,66 @@ test('an empty pane says where PRs come from', async ($, on) => {
   await ui.unmount()
 })
 
+function reviewThread(id: string, isResolved: boolean, comments: [login: string, createdAt: string, body: string][]) {
+  return {
+    id,
+    isResolved,
+    path: 'src/export.ts',
+    line: 3,
+    comments: {
+      nodes: comments.map(([login, createdAt, body], index) => ({
+        author: { login },
+        createdAt,
+        body,
+        url: `https://github.com/acme/app/pull/12#discussion_${id}_${index}`,
+      })),
+    },
+  }
+}
+
+test('the next step and my open threads show whose turn it is, mine first', async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, [], {
+    12: githubAnswer(12, {
+      reviewThreads: {
+        totalCount: 3,
+        nodes: [
+          reviewThread('waiting', false, [
+            ['bob', '2026-11-11T10:00:00Z', 'Why does the export skip empty rows?'],
+            ['ana', '2026-11-11T11:00:00Z', 'On purpose.'],
+          ]),
+          reviewThread('mine', false, [['cid', '2026-11-11T10:00:00Z', 'Rename this\n\nto `exportRows`.']]),
+          reviewThread('done', true, [['bob', '2026-11-11T10:00:00Z', 'Nit']]),
+        ],
+      },
+    }),
+  })
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+
+    expect((await ui.findAll({ type: 'Text', text: /^→/ })).map(step => step.text)).toEqual([
+      '→ You: reply to 1 thread',
+      '→ Reviewers: 1 thread waits for them',
+    ])
+    expect((await ui.findAll({ type: 'Text', text: /^(your turn|waiting)$/ })).map(turn => turn.text)).toEqual(['your turn', 'waiting'])
+    expect((await ui.find({ key: 'mine' }))?.text).toContain('cid')
+    expect((await ui.find({ key: 'mine' }))?.text).toContain('Rename this to `exportRows`.')
+    expect((await ui.find({ key: 'waiting' }))?.text).toContain('Why does the export skip empty rows?')
+    expect(await ui.find({ key: 'done' })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Link' })).map(link => link.props.href)).toEqual([
+      'https://github.com/acme/app/pull/12',
+      'https://github.com/acme/app/pull/12#discussion_mine_0',
+      'https://github.com/acme/app/pull/12#discussion_waiting_0',
+    ])
+    await ui.unmount()
+  }
+})
+
 test('a PR past the 100 commits the query reads says 100+', async ($, on) => {
   const clock = mock.clock(on)
   const commits = Array.from({ length: 100 }, (_, index) => ({

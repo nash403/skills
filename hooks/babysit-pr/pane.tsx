@@ -5,6 +5,8 @@ import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './fo
 import { prLabel } from './refs'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import type { StatusChip } from './rules'
+import { concerningThreads, excerpt, isViewerTurn, nextSteps } from './turns'
+import type { ConcerningThread } from './turns'
 
 type PaneInput = RenderInput<'Pane'>
 
@@ -109,6 +111,64 @@ function countsLine($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
+function nextStepLines($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const { Box, Text } = $.ui.resolve(e)
+  const steps = nextSteps(pr)
+
+  if (steps.length === 0) {
+    return null
+  }
+
+  return (
+    <Box flexDirection="column">
+      {steps.map(({ actor, action }) => (
+        <Box key={`${actor}: ${action}`}>
+          <Text bold={actor === 'You'} color={actor === 'You' ? 'suggestion' : 'subtle'}>
+            → {actor}: {action}
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+function threadRow($: EngineInterface, e: PaneInput, { thread, firstComment, turn }: ConcerningThread) {
+  const { Box, Link, Text } = $.ui.resolve(e)
+
+  return (
+    <Box key={thread.id} flexDirection="column">
+      <Box flexDirection="row" columnGap={1}>
+        <Text bold>{firstComment.author}</Text>
+        <Text color={isViewerTurn(turn) ? 'suggestion' : 'inactive'}>{isViewerTurn(turn) ? 'your turn' : 'waiting'}</Text>
+        <Link href={firstComment.url}>
+          <Text dimColor>↗</Text>
+        </Link>
+      </Box>
+      <Box paddingLeft={2}>
+        <Text dimColor wrap="wrap">
+          {excerpt(firstComment.body)}
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
+function threadList($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
+  const { Box, Text } = $.ui.resolve(e)
+  const concerning = concerningThreads(pr)
+
+  if (concerning.length === 0) {
+    return null
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>Your open threads ({concerning.length})</Text>
+      {concerning.map(item => threadRow($, e, item))}
+    </Box>
+  )
+}
+
 function participantRows($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const people = participants(pr)
@@ -147,8 +207,10 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr) {
         </Box>
       )}
       {pr && stateLine($, e, pr)}
+      {pr && nextStepLines($, e, pr)}
       {pr && countsLine($, e, pr)}
       {pr && participantRows($, e, pr)}
+      {pr && threadList($, e, pr)}
     </Box>
   )
 }

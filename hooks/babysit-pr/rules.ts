@@ -102,7 +102,7 @@ function latestCommentAt({ threads }: PrSnapshot) {
   return times.length > 0 ? Math.max(...times) : null
 }
 
-function headCommittedAt(pr: PrSnapshot) {
+export function headCommittedAt(pr: PrSnapshot) {
   const head = pr.commits.find(commit => commit.sha === pr.headSha) ?? pr.commits.at(-1)
 
   return head ? Date.parse(head.committedAt) : null
