@@ -15,6 +15,7 @@ export type ChangeRequest =
 
 export type GitSnapshot = {
   folder: string
+  root: string
   isLinkedWorktree: boolean
   branch: string | null
   isDetached: boolean
@@ -27,6 +28,10 @@ export type GitSnapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'nash403-skills': { gitBand: Shaped<GitSnapshot | null> }
+    'nash403-skills': {
+      gitBand: Shaped<GitSnapshot | null>
+      gitBandEditedDirs: Shaped<string[]>
+      isGitBandDirListOpen: boolean
+    }
   }
 }

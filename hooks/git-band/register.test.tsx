@@ -114,7 +114,41 @@ test('the main branch in sync shows no rebase or new PR button', async ($, on) =
   expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.text).toBe('✓')
   expect(await ui.find({ key: 'rebase' })).toBeUndefined()
   expect(await ui.find({ key: 'new-pr' })).toBeUndefined()
+  expect(await ui.find({ key: 'dirs' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('edits outside the session folder list their folders on click', async ($, on) => {
+  stubEngine(on, {
+    ...MAIN_UP_TO_DATE,
+    '/work/app git rev-parse --show-toplevel': '/work/app',
+    '/work/app/src git rev-parse --show-toplevel': '/work/app',
+    '/home/me/other/src git rev-parse --show-toplevel': '/home/me/other',
+  }, [])
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/app/src/a.ts', old_string: 'a', new_string: 'b' })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+
+    expect(await ui.find({ key: 'dirs' })).toBeUndefined()
+    await ui.unmount()
+  }
+
+  await $.tool.call({ tool: 'Write', file_path: '/home/me/other/src/b.ts', content: 'b' })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+
+    expect(await ui.find({ type: 'Text', text: /other/ })).toBeUndefined()
+    await ui.press({ key: 'dirs' })
+    expect((await ui.find({ type: 'Text', text: /other/ }))?.text).toBe('~/other')
+    expect((await ui.find({ type: 'Text', text: /session/ }))?.text).toBe('/work/app (session)')
+    await ui.press({ key: 'dirs' })
+    expect(await ui.find({ type: 'Text', text: /other/ })).toBeUndefined()
+    await ui.unmount()
+  }
 })
 
 function stubEngine(on: any, repo: Repo, submitted: string[]) {
@@ -127,8 +161,11 @@ function stubEngine(on: any, repo: Repo, submitted: string[]) {
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/work/app' }))
   on('clock.every', () => ({ value: undefined }))
-  on('process.run', (_: unknown, e: { argv: readonly string[] }) => {
-    const stdout = repo[e.argv.join(' ')]
+  on('env.get', () => ({ value: '/home/me' }))
+  on('tool.call', () => ({ result: {} }))
+  on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { cwd?: string } }) => {
+    const command = e.argv.join(' ')
+    const stdout = repo[`${e.init?.cwd} ${command}`] ?? repo[command]
 
     return { value: { exitCode: stdout === undefined ? 1 : 0, stdout: stdout ?? '', stderr: '' } }
   })
