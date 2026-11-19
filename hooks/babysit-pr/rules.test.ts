@@ -47,6 +47,7 @@ function thread(id: string, isResolved: boolean, ...comments: [author: string, c
   return {
     id,
     isResolved,
+    resolvedBy: isResolved ? 'dee' : null,
     path: 'src/export.ts',
     line: 3,
     comments: comments.map(([author, createdAt]) => ({ author, createdAt, body: 'Why?', url: `https://x/${id}`, headSha: null })),

@@ -21,6 +21,7 @@ function thread(id: string, ...commentUrls: string[]): PrThread {
   return {
     id,
     isResolved: false,
+    resolvedBy: null,
     path: 'src/save.ts',
     line: 3,
     comments: commentUrls.map(url => ({ author: 'bob', createdAt: '2026-11-10T09:00:00Z', body: 'Why?', url, headSha: null })),

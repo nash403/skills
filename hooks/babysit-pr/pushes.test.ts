@@ -99,6 +99,7 @@ function thread(id: string, isResolved: boolean, ...comments: [author: string, h
   return {
     id,
     isResolved,
+    resolvedBy: isResolved ? 'dee' : null,
     path: null,
     line: null,
     comments: comments.map(([author, headSha, day], index) => ({

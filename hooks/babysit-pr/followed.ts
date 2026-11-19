@@ -4,8 +4,9 @@ import type { EngineInterface, SessionMessage } from 'claude-code'
 import type { FollowedPr, PrRef, PrSnapshot } from '../../types'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
+import { clearChanges, forgetPr, markShown, recordRead } from './watched'
 
-const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-4' })
+const followedPrs = atom({ plugin: 'nash403-skills', key: 'babysitPrs' } as const, [], { shape: 'prs-5' })
 const selectedPr = atom({ plugin: 'nash403-skills', key: 'babysitSelectedPr' } as const, null)
 // PRs removed by hand: what the session shows again doesn't bring them back, only a manual add.
 const removedPrs = atom({ plugin: 'nash403-skills', key: 'babysitRemovedPrs' } as const, [], { shape: 'removed-1' })
@@ -15,12 +16,55 @@ const isOptedIn = atom({ plugin: 'nash403-skills', key: 'isBabysitPrOptedIn' } a
 
 const MESSAGES_PER_SCAN = 4096
 
+// The id register.tsx opens the pane under.
+const PANE_ID = 'babysit-pr'
+
+// The selected PR, else the first one.
+function shownIndex(prs: readonly FollowedPr[], selected: string | null) {
+  return Math.max(0, prs.findIndex(pr => prKey(pr.ref) === selected))
+}
+
 // Read while drawing, this subscribes the drawing to both values.
 export async function readFollowedPrs($: EngineInterface) {
   const prs = await read($, followedPrs)
   const selected = await read($, selectedPr)
 
-  return { prs, selectedIndex: Math.max(0, prs.findIndex(pr => prKey(pr.ref) === selected)) }
+  return { prs, selectedIndex: shownIndex(prs, selected) }
+}
+
+async function readShownPrKey($: EngineInterface) {
+  const { prs, selectedIndex } = await readFollowedPrs($)
+  const shown = prs[selectedIndex]
+
+  return shown ? prKey(shown.ref) : null
+}
+
+// Whether a surface draws the pane, in front of the plugin's other panes.
+async function isPaneShown($: EngineInterface) {
+  return (await $.ui.panes()).some(pane => pane.id === PANE_ID && pane.isShown && pane.isPlaced)
+}
+
+// The PR the pane shows right now, or null while the pane is closed, hidden or undrawn.
+async function readPrOnScreen($: EngineInterface) {
+  return (await isPaneShown($)) ? readShownPrKey($) : null
+}
+
+// Opening the pane, or finding it shown, counts as showing its PR.
+export async function markPrOnScreenShown($: EngineInterface) {
+  const key = await readPrOnScreen($)
+
+  if (key !== null) {
+    await markShown($, key)
+  }
+}
+
+// A press in the pane acts on the PR it shows: the changes it showed are seen.
+export async function clearShownPrChanges($: EngineInterface) {
+  const key = await readShownPrKey($)
+
+  if (key !== null) {
+    await clearChanges($, key)
+  }
 }
 
 // A PR the pane follows and has read, named by its URL as the pane's tools take it.
@@ -51,10 +95,20 @@ export async function hasOptedIn($: EngineInterface) {
 
 const fetching = new Set<string>()
 
+// A failed read is shown on the PR, so it resolves to its reason.
+async function fetchOrReason($: EngineInterface, ref: PrRef, previous: PrSnapshot | null): Promise<{ snapshot: PrSnapshot } | { reason: string }> {
+  try {
+    return { snapshot: await fetchSnapshot($, ref, previous) }
+  } catch (error) {
+    return { reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 async function refetch($: EngineInterface, refs: readonly PrRef[]) {
   const idle = refs.filter(ref => !fetching.has(prKey(ref)))
   idle.forEach(ref => fetching.add(prKey(ref)))
   const list = await read($, followedPrs)
+  const onScreen = await readPrOnScreen($)
 
   await Promise.all(
     idle.map(async ref => {
@@ -62,11 +116,16 @@ async function refetch($: EngineInterface, refs: readonly PrRef[]) {
       const previous = list.find(pr => prKey(pr.ref) === key)?.snapshot ?? null
 
       try {
-        const snapshot = await fetchSnapshot($, ref, previous)
+        const fetched = await fetchOrReason($, ref, previous)
+
+        if ('reason' in fetched) {
+          await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, error: fetched.reason } : pr)))
+          return
+        }
+
+        const { snapshot } = fetched
         await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, snapshot, error: null } : pr)))
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, error: reason } : pr)))
+        await recordRead($, ref, previous, snapshot, { isOnScreen: onScreen === key })
       } finally {
         fetching.delete(key)
       }
@@ -112,8 +171,8 @@ export async function followByHand($: EngineInterface, input: string) {
 
   const key = prKey(parsed.ref)
   await update($, removedPrs, keys => keys.filter(removedKey => removedKey !== key))
-  await update($, selectedPr, () => key)
   await follow($, [parsed.ref])
+  await select($, parsed.ref)
   await refetch($, [parsed.ref])
 }
 
@@ -125,11 +184,19 @@ export async function unfollow($: EngineInterface, ref: PrRef) {
 
   await update($, removedPrs, keys => [...keys, key])
   await update($, followedPrs, prs => prs.filter(pr => prKey(pr.ref) !== key))
+  await forgetPr($, key)
   await update($, selectedPr, () => (neighbour ? prKey(neighbour.ref) : null))
+
+  if (neighbour) {
+    await markShown($, prKey(neighbour.ref))
+  }
 }
 
 export async function select($: EngineInterface, ref: PrRef) {
-  await update($, selectedPr, () => prKey(ref))
+  const key = prKey(ref)
+
+  await update($, selectedPr, () => key)
+  await markShown($, key)
 }
 
 async function readNewestMessages($: EngineInterface) {

@@ -44,6 +44,7 @@ function thread(id: string, ...messages: Message[]): PrThread {
   return {
     id,
     isResolved: false,
+    resolvedBy: null,
     path: 'src/export.ts',
     line: 3,
     comments: messages.map(([author, day, body = 'Why?'], index) => ({
@@ -57,7 +58,7 @@ function thread(id: string, ...messages: Message[]): PrThread {
 }
 
 function resolved(open: PrThread): PrThread {
-  return { ...open, isResolved: true }
+  return { ...open, isResolved: true, resolvedBy: 'dee' }
 }
 
 function turns(pr: PrSnapshot) {

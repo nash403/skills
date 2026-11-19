@@ -396,7 +396,7 @@ test('a gh command adds the PR it prints, and a subagent turn scans nothing', as
   await ui.unmount()
 })
 
-test('open PRs are polled every 3 minutes while the pane is open, merged ones never', async ($, on) => {
+test('open PRs are polled every 3 minutes, with the pane closed too, merged ones never', async ($, on) => {
   const clock = mock.clock(on)
   const { calls, closePane } = stubEngine(on, [{ role: 'user', text: 'https://github.com/acme/app/pull/7', toolUses: [] }], {
     7: githubAnswer(7, { state: 'MERGED' }),
@@ -411,6 +411,7 @@ test('open PRs are polled every 3 minutes while the pane is open, merged ones ne
   expect(platformCalls(calls)).toEqual(['number=12'])
 
   closePane()
+  calls.length = 0
   await clock.advance(3 * 60_000)
   expect(platformCalls(calls)).toEqual(['number=12'])
 })
@@ -1066,4 +1067,173 @@ test('GitLab versions are read again only when the head moved', async ($, on) =>
   await clock.advance(3 * 60_000)
   expect(platformCalls(calls)).toEqual(['number=12', 'iid=21'])
   expect(pushReads(calls).filter(path => path.includes('/versions'))).toEqual([])
+})
+
+// Ana's open thread on Dee's PR #7, waiting on Dee.
+const ASKED = reviewThread('asked', false, [['ana', '2026-11-11T10:00:00Z', 'Why skip empty rows?']])
+
+const CID_APPROVAL = { databaseId: 78, author: { login: 'cid' }, state: 'APPROVED', submittedAt: '2026-11-12T09:00:00Z', commit: { oid: 'c2' } }
+
+function peerAnswer(overrides: Record<string, unknown>) {
+  return githubAnswer(7, { author: { login: 'dee' }, latestOpinionatedReviews: { nodes: [] }, ...overrides })
+}
+
+// Dee's PR #7 beside Ana's own #12, the pane open on #12. A test changes `answers[7]` and `diffs` to change the PR.
+async function watchPeerPr($: any, on: any, peerPr: Record<string, unknown>) {
+  const clock = mock.clock(on)
+  const answers: Record<number, unknown> = { 7: peerAnswer(peerPr) }
+  const diffs: Record<string, string> = {}
+  const engine = stubEngine(on, [{ role: 'user', text: `Review ${PR_7}`, toolUses: [] }], answers, diffs)
+
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  return { clock, answers, diffs, ...engine }
+}
+
+async function dots(ui: any) {
+  return (await ui.findAll({ type: 'Text', text: /^•$/ })).length
+}
+
+async function changeLines(ui: any): Promise<string[]> {
+  return (await ui.findAll({ type: 'Text', text: /^(@|Code pushed|All your threads)/ })).map((line: { text: string }) => line.text)
+}
+
+test("a reply and an approval on a peer's PR toast once, put a dot in the switcher, and show in its changes block until a press there", async ($, on) => {
+  const { answers, clock, prompts, toasts } = await watchPeerPr($, on, { reviewThreads: { totalCount: 1, nodes: [ASKED] } })
+  expect(toasts).toEqual([])
+
+  answers[7] = peerAnswer({
+    reviewThreads: { totalCount: 1, nodes: [reviewThread('asked', false, [['ana', '2026-11-11T10:00:00Z', 'Why skip empty rows?'], ['dee', '2026-11-12T10:00:00Z', 'Old exports have them.']])] },
+    latestOpinionatedReviews: { nodes: [CID_APPROVAL] },
+  })
+  await clock.advance(3 * 60_000)
+  expect(toasts).toEqual(['acme/app#7: @dee replied on 1 thread · @cid approved'])
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await dots(ui)).toBe(1)
+    expect(await ui.find({ type: 'Text', text: /^Changes since/ })).toBeUndefined()
+    await ui.unmount()
+  }
+
+  const terminal = await mountPeerPr($, 'terminal')
+  expect(await dots(terminal)).toBe(0)
+  expect((await terminal.find({ type: 'Text', text: /^Changes since/ }))?.text).toBe('Changes since your last visit')
+  expect(await changeLines(terminal)).toEqual(['@dee replied on 1 thread', '@cid approved'])
+  expect(await terminal.find({ key: 'change:approval:cid' })).toMatchObject({ text: '@cid approved' })
+  await terminal.unmount()
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await changeLines(desktop)).toEqual(['@dee replied on 1 thread', '@cid approved'])
+  await desktop.press({ key: 'changes:triage:replied:dee' })
+  expect(prompts.at(-1)).toContain('Triage 1 thread on @dee')
+  expect(await desktop.find({ type: 'Text', text: /^Changes since/ })).toBeUndefined()
+  expect(await dots(desktop)).toBe(0)
+  await desktop.unmount()
+})
+
+test('polling goes on with the pane closed: a code push toasts, the PR keeps its dot until shown, and a rebase alone raises nothing', async ($, on) => {
+  const { answers, calls, clock, closePane, commands, diffs, toasts } = await watchPeerPr($, on, COMMENTED_ON_C1)
+
+  closePane()
+  calls.length = 0
+  answers[7] = peerAnswer({ ...COMMENTED_ON_C1, headRefOid: 'c3' })
+  await clock.advance(3 * 60_000)
+  expect(platformCalls(calls)).toEqual(['number=12', 'number=7'])
+  expect(toasts).toEqual(['acme/app#7: Code pushed since your review'])
+
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await dots(ui)).toBe(1)
+    await ui.unmount()
+  }
+
+  const ui = await mountPeerPr($, 'desktop')
+  expect(await changeLines(ui)).toEqual(['Code pushed since your review'])
+  commands.length = 0
+  await ui.press({ key: 'changes:review-changes' })
+  expect(commands[0]?.command).toBe('nash403-skills:pr-review')
+  expect(commands[0]?.args).toContain('from c1, the head I last reviewed or commented on, to c3, the head now')
+  expect(await changeLines(ui)).toEqual([])
+  await ui.unmount()
+
+  diffs.c4 = 'diff of c3'
+  answers[7] = peerAnswer({ ...COMMENTED_ON_C1, headRefOid: 'c4' })
+  await clock.advance(3 * 60_000)
+  expect(toasts).toHaveLength(1)
+})
+
+test('changes that land while the pane shows the PR get no dot, and all my threads resolved offers Approve', async ($, on) => {
+  const { answers, clock, toasts, writes } = await watchPeerPr($, on, { reviewThreads: { totalCount: 1, nodes: [ASKED] } })
+
+  const shown = await mountPeerPr($, 'terminal')
+  await shown.unmount()
+
+  answers[7] = peerAnswer({ reviewThreads: { totalCount: 1, nodes: [{ ...ASKED, isResolved: true, resolvedBy: { login: 'dee' } }] } })
+  await clock.advance(3 * 60_000)
+  expect(toasts).toEqual(['acme/app#7: All your threads are resolved'])
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await dots(ui)).toBe(0)
+    expect(await changeLines(ui)).toEqual(['All your threads are resolved'])
+    await ui.unmount()
+  }
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  writes.length = 0
+  await ui.press({ key: 'changes:approve' })
+  expect(writes.map(({ argv }) => argv.join(' '))).toEqual([
+    'gh api --hostname github.com -X POST repos/acme/app/pulls/7/reviews -f event=APPROVE -f commit_id=c2',
+  ])
+  expect(await changeLines(ui)).toEqual([])
+  await ui.unmount()
+})
+
+test('changes leave once the pane shows the PR again, and what lands while it is closed keeps its dot', async ($, on) => {
+  const { answers, clock, closePane } = await watchPeerPr($, on, { reviewThreads: { totalCount: 1, nodes: [ASKED] } })
+  const replied = reviewThread('asked', false, [['ana', '2026-11-11T10:00:00Z', 'Why skip empty rows?'], ['dee', '2026-11-12T10:00:00Z', 'Old exports have them.']])
+
+  answers[7] = peerAnswer({ reviewThreads: { totalCount: 1, nodes: [replied] } })
+  await clock.advance(3 * 60_000)
+  const ui = await mountPeerPr($, 'terminal')
+  expect(await changeLines(ui)).toEqual(['@dee replied on 1 thread'])
+
+  await clock.advance(3 * 60_000)
+  expect(await changeLines(ui)).toEqual([])
+
+  answers[7] = peerAnswer({ reviewThreads: { totalCount: 1, nodes: [replied] }, latestOpinionatedReviews: { nodes: [CID_APPROVAL] } })
+  await clock.advance(3 * 60_000)
+  expect(await changeLines(ui)).toEqual(['@cid approved'])
+  expect(await dots(ui)).toBe(0)
+  await ui.unmount()
+
+  closePane()
+  answers[7] = peerAnswer({ reviewThreads: { totalCount: 1, nodes: [replied] } })
+  await clock.advance(3 * 60_000)
+
+  for (const surface of SURFACES) {
+    const closed = await $.ui.mount({ ...PANE, surface })
+    expect(await changeLines(closed)).toEqual(['@cid withdrew their approval'])
+    expect(await dots(closed)).toBe(1)
+    await closed.unmount()
+  }
+
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  const reopened = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await changeLines(reopened)).toEqual(['@cid withdrew their approval'])
+  expect(await dots(reopened)).toBe(0)
+  await reopened.unmount()
+
+  await $.command.run(OPEN_COMMAND)
+  await clock.settle()
+  const again = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await changeLines(again)).toEqual([])
+  await again.unmount()
 })

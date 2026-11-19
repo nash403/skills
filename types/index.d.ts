@@ -41,9 +41,11 @@ export type BlockedReason = 'conflicts' | 'rebase' | 'approvals' | 'threads' | '
 // `headSha` is the head the comment was written on: GitHub says it, GitLab doesn't.
 export type PrComment = { author: string; createdAt: string; body: string; url: string; headSha: string | null }
 
+// `resolvedBy` is null while the thread is open.
 export type PrThread = {
   id: string
   isResolved: boolean
+  resolvedBy: string | null
   path: string | null
   line: number | null
   comments: PrComment[]
@@ -96,6 +98,20 @@ export type PrSnapshot = {
   hasMoreCommits: boolean
 }
 
+// What changed on a PR between two reads, by someone other than the viewer.
+export type PrChange =
+  | { kind: 'code-pushed' }
+  | { kind: 'replied' | 'mentioned'; author: string; threadIds: string[] }
+  | { kind: 'threads-resolved' }
+  | { kind: 'approved' | 'unapproved'; user: string }
+
+// The newest head whose patch-id was read. A code push is measured from it, so a failed read raises no event and the
+// next read that has a patch-id still compares with the right head.
+export type CodeHead = { sha: string; patchId: string; baseBranch: string }
+
+// One PR's watch: the changes the user has not acted on yet, and whether the pane showed the PR since they came in.
+export type PrWatch = { codeHead: CodeHead | null; changes: PrChange[]; isShown: boolean }
+
 export type FollowedPr = {
   ref: PrRef
   snapshot: PrSnapshot | null
@@ -138,6 +154,8 @@ declare module 'claude-code' {
       isBabysitTriageOpen: StateFamily<boolean>
       // By PR key.
       babysitReplyDrafts: Shaped<Record<string, ReplyDrafts>>
+      // By PR key.
+      babysitWatches: Shaped<Record<string, PrWatch>>
     }
   }
 }

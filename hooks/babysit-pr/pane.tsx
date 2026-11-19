@@ -1,12 +1,13 @@
 import type { Color, EngineInterface, RenderInput } from 'claude-code'
 
-import type { CiState, FollowedPr, PrRef, PrSnapshot, PrThread, PrTriage, ReplyDrafts, TriageImportance } from '../../types'
+import type { CiState, FollowedPr, PrChange, PrRef, PrSnapshot, PrThread, PrTriage, PrWatch, ReplyDrafts, TriageImportance } from '../../types'
 import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveThread, unapprove } from './actions'
+import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
 import { explainPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
-import { prLabel } from './refs'
+import { prKey, prLabel } from './refs'
 import { headToReviewFrom, viewerApproval } from './pushes'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import type { StatusChip } from './rules'
@@ -15,6 +16,7 @@ import type { FeedbackTally, TriageStatus } from './triage'
 import { readPrTriage } from './triaged'
 import { concerningThreads, excerpt, isViewerPr, isViewerTurn, nextSteps } from './turns'
 import type { ConcerningThread } from './turns'
+import { hasUnseenChanges, readWatches } from './watched'
 
 type PaneInput = RenderInput<'Pane'>
 
@@ -22,6 +24,8 @@ type PaneInput = RenderInput<'Pane'>
 type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; drafts: ReplyDrafts; openDetails: ReadonlySet<string> }
 
 type TriagedStatus = Exclude<TriageStatus, { kind: 'not-triaged' }>
+
+type Watches = Record<string, PrWatch>
 
 // Whether a triaged thread shows its longer summary, by thread id.
 const detailsOpenFamily = { plugin: 'nash403-skills', key: 'isBabysitTriageOpen' } as const
@@ -47,7 +51,18 @@ const CI_TEXTS: Record<CiState, { text: string; color: Color }> = {
   error: { text: 'CI error', color: 'error' },
 }
 
-function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], index: number) {
+function unseenDot($: EngineInterface, e: PaneInput) {
+  const { Text } = $.ui.resolve(e)
+
+  return (
+    <Text bold color="suggestion">
+      •
+    </Text>
+  )
+}
+
+// A `•` beside the shown PR when it has changes the pane never showed, and beside the count when another PR has.
+function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], index: number, watches: Watches) {
   const { Box, Button, Link, Text } = $.ui.resolve(e)
   const shown = prs[index]
 
@@ -59,16 +74,22 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
   const next = prs[(index + 1) % prs.length] ?? shown
   const url = shown.snapshot?.url
   const hasMany = prs.length > 1
+  const isUnseen = (pr: FollowedPr) => hasUnseenChanges(watches[prKey(pr.ref)])
+  const isAnotherUnseen = prs.some(pr => pr !== shown && isUnseen(pr))
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
       {hasMany && <Button key="previous" label="‹" plain onPress={() => void select($, previous.ref)} />}
       {hasMany && (
-        <Text dimColor>
-          {index + 1}/{prs.length}
-        </Text>
+        <Box flexDirection="row" columnGap={1}>
+          <Text dimColor>
+            {index + 1}/{prs.length}
+          </Text>
+          {isAnotherUnseen && unseenDot($, e)}
+        </Box>
       )}
       {hasMany && <Button key="next" label="›" plain onPress={() => void select($, next.ref)} />}
+      {isUnseen(shown) && unseenDot($, e)}
       {url ? (
         <Link href={url}>
           <Text bold>{prLabel(shown.ref)} ↗</Text>
@@ -121,6 +142,80 @@ function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapsho
         <Button key="approve" label="Approve" variant="primary" onPress={() => void approve($, ref, pr.headSha)} />
       )}
       {fromSha !== null && <Button key="review-changes" label="Review changes" onPress={() => void askReviewChanges($, ref, pr, fromSha)} />}
+    </Box>
+  )
+}
+
+// Still true when drawn: on a peer's open PR, no approval from the viewer and none of their threads open again.
+function canApproveResolved(pr: PrSnapshot) {
+  return pr.state === 'open' && !isViewerPr(pr) && viewerApproval(pr) === undefined && concerningThreads(pr).length === 0
+}
+
+// The threads of a change that still wait for a triage.
+function threadsToTriage({ pr, triage }: ThreadsView, threadIds: readonly string[]) {
+  const { toTriage } = feedbackTally(concerningThreads(pr).map(item => item.thread), triage)
+
+  return toTriage.filter(thread => threadIds.includes(thread.id))
+}
+
+// The button that answers a change, when its action still applies. Approvals given or withdrawn are news only.
+function changeAnswer($: EngineInterface, e: PaneInput, view: ThreadsView, change: PrChange) {
+  const { Button } = $.ui.resolve(e)
+  const { ref, pr } = view
+
+  switch (change.kind) {
+    case 'code-pushed': {
+      const fromSha = headToReviewFrom(pr)
+
+      return fromSha === null ? null : <Button key="changes:review-changes" label="Review changes" onPress={() => void askReviewChanges($, ref, pr, fromSha)} />
+    }
+    case 'replied':
+    case 'mentioned': {
+      const toTriage = threadsToTriage(view, change.threadIds)
+
+      return toTriage.length === 0 ? null : (
+        <Button key={`changes:triage:${change.kind}:${change.author}`} label="Triage" onPress={() => submitPrompt($, triagePrompt(ref, pr, toTriage))} />
+      )
+    }
+    case 'threads-resolved':
+      return canApproveResolved(pr) ? <Button key="changes:approve" label="Approve" onPress={() => void approve($, ref, pr.headSha)} /> : null
+    default:
+      return null
+  }
+}
+
+function changeKey(change: PrChange) {
+  switch (change.kind) {
+    case 'replied':
+    case 'mentioned':
+      return `change:${change.kind}:${change.author}`
+    case 'approved':
+    case 'unapproved':
+      return `change:approval:${change.user}`
+    default:
+      return `change:${change.kind}`
+  }
+}
+
+// What changed since the user last acted on the PR in the pane, each change with the button that answers it.
+function changesBlock($: EngineInterface, e: PaneInput, view: ThreadsView, changes: readonly PrChange[]) {
+  const { Box, Text } = $.ui.resolve(e)
+
+  if (changes.length === 0) {
+    return null
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color="suggestion">
+        Changes since your last visit
+      </Text>
+      {changes.map(change => (
+        <Box key={changeKey(change)} flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
+          <Text>{changeText(change)}</Text>
+          {changeAnswer($, e, view, change)}
+        </Box>
+      ))}
     </Box>
   )
 }
@@ -333,12 +428,13 @@ function participantRows($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   )
 }
 
-function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null) {
+function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: ThreadsView | null, changes: readonly PrChange[]) {
   const { Box, Text } = $.ui.resolve(e)
   const pr = followed.snapshot
 
   return (
     <Box flexDirection="column" rowGap={1}>
+      {view && changesBlock($, e, view, changes)}
       {pr === null && followed.error === null && <Text dimColor>Loading…</Text>}
       {followed.error !== null && <Text color="error">Could not read it: {followed.error}</Text>}
       {pr && (
@@ -362,17 +458,24 @@ function prView($: EngineInterface, e: PaneInput, followed: FollowedPr, view: Th
 }
 
 // A minimized pane on the desktop app: one line, and clicks may not reach it.
-function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefined) {
+function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefined, watches: Watches) {
   const { Text } = $.ui.resolve(e)
+  const dot = Object.values(watches).some(hasUnseenChanges) ? <Text color="suggestion">• </Text> : null
 
   if (!followed?.snapshot) {
-    return <Text dimColor>{followed ? prLabel(followed.ref) : 'No PR'}</Text>
+    return (
+      <Text dimColor>
+        {dot}
+        {followed ? prLabel(followed.ref) : 'No PR'}
+      </Text>
+    )
   }
 
   const chip = statusChip(followed.snapshot)
 
   return (
     <Text>
+      {dot}
       {prLabel(followed.ref)} <Text color={CHIP_COLORS[chip]}>{chip}</Text>
     </Text>
   )
@@ -390,18 +493,20 @@ async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot): 
 export async function drawPane($: EngineInterface, e: PaneInput) {
   const { Box, Input, Text } = $.ui.resolve(e)
   const { prs, selectedIndex } = await readFollowedPrs($)
+  const watches = await readWatches($)
   const shown = prs[selectedIndex]
 
   if (e.props.placement === 'widget') {
-    return glance($, e, shown)
+    return glance($, e, shown, watches)
   }
 
   const view = shown?.snapshot ? await readThreadsView($, shown.ref, shown.snapshot) : null
+  const changes = shown ? (watches[prKey(shown.ref)]?.changes ?? []) : []
 
   return (
     <Box flexDirection="column" rowGap={1} width="100%">
-      {shown ? switcher($, e, prs, selectedIndex) : <Text dimColor>No PR yet. The PRs and MRs this session opens or mentions show up here.</Text>}
-      {shown && prView($, e, shown, view)}
+      {shown ? switcher($, e, prs, selectedIndex, watches) : <Text dimColor>No PR yet. The PRs and MRs this session opens or mentions show up here.</Text>}
+      {shown && prView($, e, shown, view, changes)}
       <Input key="add" placeholder="Add a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />
     </Box>
   )

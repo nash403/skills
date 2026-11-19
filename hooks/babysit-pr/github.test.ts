@@ -82,7 +82,7 @@ const ANSWER = {
                 ],
               },
             },
-            { id: 'PRRT_2', isResolved: true, isOutdated: true, path: 'README.md', line: null, comments: { nodes: [] } },
+            { id: 'PRRT_2', isResolved: true, resolvedBy: { login: 'ana' }, isOutdated: true, path: 'README.md', line: null, comments: { nodes: [] } },
           ],
         },
       },
@@ -125,6 +125,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
       {
         id: 'PRRT_1',
         isResolved: false,
+        resolvedBy: null,
         path: 'src/export.ts',
         line: 4,
         comments: [
@@ -132,7 +133,7 @@ test('a GitHub answer reads as a PR snapshot', () => {
           { author: 'ghost', createdAt: '2026-11-11T12:00:00Z', body: 'Because.', url: 'https://github.com/acme/app/pull/12#discussion_r12', headSha: null },
         ],
       },
-      { id: 'PRRT_2', isResolved: true, path: 'README.md', line: null, comments: [] },
+      { id: 'PRRT_2', isResolved: true, resolvedBy: 'ana', path: 'README.md', line: null, comments: [] },
     ],
     heads: [],
     lastViewerActivity: { at: '2026-11-11T09:00:00Z', headSha: 'c1' },

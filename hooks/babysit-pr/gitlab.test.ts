@@ -63,6 +63,13 @@ const ANSWER = {
             },
             { id: 'gid://gitlab/Discussion/b2', resolvable: false, resolved: false, notes: { nodes: [{ ...NOTE, body: 'Nice', url: 'u' }] } },
             {
+              id: 'gid://gitlab/Discussion/e5',
+              resolvable: true,
+              resolved: true,
+              resolvedBy: { username: 'ana' },
+              notes: { nodes: [{ ...NOTE, body: 'Typo', url: 'https://gitlab.com/team/app/-/merge_requests/345#note_5' }] },
+            },
+            {
               id: 'gid://gitlab/Discussion/c3',
               resolvable: false,
               resolved: false,
@@ -110,10 +117,21 @@ test('a GitLab answer reads as a PR snapshot', () => {
       {
         id: 'gid://gitlab/Discussion/a1',
         isResolved: false,
+        resolvedBy: null,
         path: 'src/export.ts',
         line: 4,
         comments: [
           { author: 'bob', createdAt: '2026-11-10T09:00:00+01:00', body: 'Why?', url: 'https://gitlab.com/team/app/-/merge_requests/345#note_1', headSha: null },
+        ],
+      },
+      {
+        id: 'gid://gitlab/Discussion/e5',
+        isResolved: true,
+        resolvedBy: 'ana',
+        path: null,
+        line: null,
+        comments: [
+          { author: 'bob', createdAt: '2026-11-10T09:00:00+01:00', body: 'Typo', url: 'https://gitlab.com/team/app/-/merge_requests/345#note_5', headSha: null },
         ],
       },
     ],

@@ -32,7 +32,7 @@ export const GITHUB_PR_QUERY = `query($owner: String!, $repo: String!, $number: 
       reviewThreads(first: 100) {
         totalCount
         nodes {
-          id isResolved path line
+          id isResolved resolvedBy { login } path line
           comments(first: 100) { nodes { author { login } createdAt body url pullRequestReview { commit { oid } } } }
         }
       }
@@ -80,6 +80,7 @@ type GithubPr = {
     nodes: {
       id: string
       isResolved: boolean
+      resolvedBy?: Login
       path: string | null
       line: number | null
       comments: { nodes: { author: Login; createdAt: string; body: string; url: string; pullRequestReview?: CommentReview }[] }
@@ -181,6 +182,7 @@ export function parseGithubPr(answer: unknown): PrSnapshot {
   const threads = pr.reviewThreads.nodes.map(thread => ({
     id: thread.id,
     isResolved: thread.isResolved,
+    resolvedBy: thread.resolvedBy?.login ?? null,
     path: thread.path,
     line: thread.line,
     comments: thread.comments.nodes.map(comment => ({

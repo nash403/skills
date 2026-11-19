@@ -24,7 +24,7 @@ export const GITLAB_MR_QUERY = `query($project: ID!, $iid: String!) {
       discussions(first: 100) {
         pageInfo { hasNextPage }
         nodes {
-          id resolvable resolved
+          id resolvable resolved resolvedBy { username }
           notes(first: 100) { nodes { author { username } createdAt body url system position { filePath newLine } } }
         }
       }
@@ -59,6 +59,7 @@ type GitlabMr = {
       id: string
       resolvable: boolean
       resolved: boolean
+      resolvedBy?: Username
       notes: {
         nodes: {
           author: Username
@@ -196,6 +197,7 @@ export function parseGitlabMr(answer: unknown): PrSnapshot {
         return {
           id: discussion.id,
           isResolved: discussion.resolved,
+          resolvedBy: discussion.resolvedBy?.username ?? null,
           path: notes[0]?.position?.filePath ?? null,
           line: notes[0]?.position?.newLine ?? null,
           comments: notes.map(note => ({ author: usernameOf(note.author), createdAt: note.createdAt, body: note.body, url: note.url, headSha: null })),
