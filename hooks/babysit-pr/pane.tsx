@@ -260,6 +260,37 @@ function tile($: EngineInterface, e: PaneInput, key: string, value: RenderChildr
   )
 }
 
+function tileFigure($: EngineInterface, e: PaneInput, text: string, color?: string) {
+  const { Text } = $.ui.resolve(e)
+
+  return (
+    <Text size="heading" weight="semibold" color={color} tabular>
+      {text}
+    </Text>
+  )
+}
+
+function tileCaption($: EngineInterface, e: PaneInput, text: string) {
+  const { Text } = $.ui.resolve(e)
+
+  return (
+    <Text size="caption" dimColor>
+      {text}
+    </Text>
+  )
+}
+
+// A row of tiles, spaced like the PR card's stat strip.
+function tileRow($: EngineInterface, e: PaneInput, tiles: RenderChildren) {
+  const { Box } = $.ui.resolve(e)
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={isCellSurface(e) ? 'xl' : 'sm'} rowGap="sm">
+      {tiles}
+    </Box>
+  )
+}
+
 // The diff's shares under its line counts: a rounded bar where the surface draws an Svg, five blocks on the terminal.
 function diffBar($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const table = $.ui.resolve(e)
@@ -287,16 +318,8 @@ function diffBar($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
 function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const { Box, Text } = $.ui.resolve(e)
   const { open, total } = threadCounts(pr)
-  const figure = (text: string) => (
-    <Text size="heading" weight="semibold" tabular>
-      {text}
-    </Text>
-  )
-  const caption = (text: string) => (
-    <Text size="caption" dimColor>
-      {text}
-    </Text>
-  )
+  const figure = (text: string) => tileFigure($, e, text)
+  const caption = (text: string) => tileCaption($, e, text)
   const lines = (
     <Box flexDirection="row" columnGap="sm">
       <Text size="heading" weight="semibold" color="diffAdded" tabular>
@@ -308,14 +331,12 @@ function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
     </Box>
   )
 
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={isCellSurface(e) ? 'xl' : 'sm'} rowGap="sm">
-      {tile($, e, 'stat:lines', lines, diffBar($, e, pr))}
-      {tile($, e, 'stat:files', figure(String(pr.changedFiles)), caption(pr.changedFiles === 1 ? 'file' : 'files'))}
-      {tile($, e, 'stat:commits', figure(commitCount(pr)), caption(pr.commits.length === 1 ? 'commit' : 'commits'))}
-      {tile($, e, 'stat:threads', figure(`${open}/${total}${pr.hasMoreThreads ? '+' : ''}`), caption('open threads'))}
-    </Box>
-  )
+  return tileRow($, e, [
+    tile($, e, 'stat:lines', lines, diffBar($, e, pr)),
+    tile($, e, 'stat:files', figure(String(pr.changedFiles)), caption(pr.changedFiles === 1 ? 'file' : 'files')),
+    tile($, e, 'stat:commits', figure(commitCount(pr)), caption(pr.commits.length === 1 ? 'commit' : 'commits')),
+    tile($, e, 'stat:threads', figure(`${open}/${total}${pr.hasMoreThreads ? '+' : ''}`), caption('open threads')),
+  ])
 }
 
 // The PR at a glance, framed in its status color: status over the title, author and branches, what it does, its
@@ -675,12 +696,19 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
   })
 }
 
-function feedbackText({ toTriage, handled, total }: FeedbackTally) {
-  if (handled === total) {
-    return '✓ all feedback handled'
-  }
+// The tally as a tile under the section title: threads handled of all. How many wait for a triage sits by the title.
+function feedbackTiles($: EngineInterface, e: PaneInput, { handled, total }: FeedbackTally) {
+  const isAllHandled = handled === total
 
-  return `${handled} of ${total} handled${toTriage.length > 0 ? `, ${toTriage.length} unknown` : ''}`
+  return tileRow($, e, [
+    tile(
+      $,
+      e,
+      'threads:handled',
+      tileFigure($, e, `${isAllHandled ? '✓ ' : ''}${handled}/${total}`, isAllHandled ? TONES.moss.bg : undefined),
+      tileCaption($, e, isAllHandled ? 'all handled' : 'handled'),
+    ),
+  ])
 }
 
 // On the viewer's PR, the open threads Fix all hands over: all but those a triage still up to date says are handled.
@@ -696,7 +724,8 @@ function threadsToFix(view: ThreadsView, concerning: readonly ConcerningThread[]
   })
 }
 
-// The threads that concern the viewer, under a title with the tally and the Triage button; a placeholder until one does.
+// The threads that concern the viewer, under a title with what to triage and the section's buttons, then the tally
+// as tiles; a placeholder until one does.
 function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   const { Box, Button, Text } = $.ui.resolve(e)
   const concerning = concerningThreads(view.pr)
@@ -714,13 +743,11 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   const { toTriage } = tally
   const toFix = isViewerPr(view.pr) ? threadsToFix(view, concerning) : []
   const aside = [
-    <Text key="count" size="caption" dimColor tabular>
-      {concerning.length}
-    </Text>,
-    <Text key="tally" color={tally.handled === tally.total ? TONES.moss.bg : undefined} dimColor={tally.handled !== tally.total}>
-      {feedbackText(tally)}
-    </Text>,
-    toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, { key: 'to-triage' }),
+    toTriage.length > 0 && (
+      <Text key="to-triage" size="caption" weight="semibold" color={TONES.saffron.bg}>
+        {toTriage.length} to triage
+      </Text>
+    ),
     toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />,
     toFix.length > 0 && <Button key="fix-all" label="Fix all" plain dimColor onPress={() => submitPrompt($, fixAllPrompt(view.ref, view.pr, toFix))} />,
     <Button
@@ -735,6 +762,7 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   return (
     <Box flexDirection="column" rowGap="sm">
       {sectionTitle($, e, 'Your open threads', aside)}
+      {feedbackTiles($, e, tally)}
       {concerning.map(item => threadRow($, e, view, item))}
     </Box>
   )
@@ -856,7 +884,7 @@ function emptyState($: EngineInterface, e: PaneInput) {
 // What the follow field holds: the Follow button reads it, as only Enter hands the field's text over.
 let followDraft = ''
 
-// A label, the field, then a button doing what Enter does.
+// A label, the field, then the one button beside it, doing what Enter does.
 function followRow($: EngineInterface, e: PaneInput) {
   const { Box, Button, Input, Text } = $.ui.resolve(e)
   const submit = (value: string) => void followByHand($, value)
@@ -868,7 +896,7 @@ function followRow($: EngineInterface, e: PaneInput) {
       </Text>
       <Box flexDirection="row" flexGrow={1} minWidth={0} columnGap="sm" alignItems="center">
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
-          <Input key="add" placeholder="#123 or URL" submitLabel="follow" onInput={value => (followDraft = value)} onSubmit={submit} />
+          <Input key="add" placeholder="#123 or URL" onInput={value => (followDraft = value)} onSubmit={submit} />
         </Box>
         <Button key="follow" label="＋ Follow" onPress={() => submit(followDraft)} />
       </Box>

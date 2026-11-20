@@ -613,7 +613,7 @@ test('a triage call fills its thread row, the badge counts the rest, more opens 
 
   const before = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await before.find({ type: 'Text', text: /to triage/ }))?.text).toBe('2 to triage')
-  expect((await before.find({ type: 'Text', text: /handled/ }))?.text).toBe('0 of 2 handled, 2 unknown')
+  expect((await before.find({ key: 'threads:handled' }))?.text).toBe('0/2handled')
   await before.unmount()
 
   const answer = await $.tool.call({ tool: TRIAGE_TOOL, pr: 'https://github.com/acme/app/pull/12', threads: [MINE_TRIAGE] })
@@ -623,7 +623,7 @@ test('a triage call fills its thread row, the badge counts the rest, more opens 
     const ui = await $.ui.mount({ ...PANE, surface })
 
     expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe('1 to triage')
-    expect((await ui.find({ type: 'Text', text: /handled,/ }))?.text).toBe('1 of 2 handled, 1 unknown')
+    expect((await ui.find({ key: 'threads:handled' }))?.text).toBe('1/2handled')
     const row = (await ui.find({ key: 'mine' }))?.text
     expect(row).toContain('rename-export-rows')
     expect(row).toContain('Nitpick')
@@ -655,7 +655,7 @@ test('every thread triaged and handled shows all feedback handled, with nothing 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect((await ui.find({ type: 'Text', text: /handled/ }))?.text).toBe('✓ all feedback handled')
+    expect((await ui.find({ key: 'threads:handled' }))?.text).toBe('✓ 2/2all handled')
     expect(await ui.find({ type: 'Text', text: /to triage/ })).toBeUndefined()
     expect(await ui.find({ key: 'triage' })).toBeUndefined()
     await ui.unmount()
@@ -685,7 +685,7 @@ test('a comment after the triage puts its thread back to triage', async ($, on) 
     await ui.press({ key: 'refresh' })
     expect((await ui.find({ type: 'Text', text: /to triage/ }))?.text).toBe('1 to triage')
     expect((await ui.find({ key: 'mine' }))?.text).toContain('new comment since triage')
-    expect((await ui.find({ type: 'Text', text: /handled/ }))?.text).toBe('0 of 1 handled, 1 unknown')
+    expect((await ui.find({ key: 'threads:handled' }))?.text).toBe('0/1handled')
     await ui.unmount()
   }
 })
