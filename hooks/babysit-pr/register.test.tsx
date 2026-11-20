@@ -875,6 +875,87 @@ test('Resolve resolves the thread on the platform, drops its draft, notes it and
   }
 })
 
+test('Resolve all resolves each of my open threads, notes it once, and the section then says they are all resolved', async ($, on) => {
+  const session = mock.session(on)
+  const answers: Record<number, unknown> = { 12: TRIAGED_PR }
+  const { calls, toasts, write, writes } = await openOnTriagedPr($, on, answers)
+  write.answer = { exitCode: 0, stdout: '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}', stderr: '' }
+  answers[12] = githubAnswer(12, {
+    reviewThreads: {
+      totalCount: 2,
+      nodes: [reviewThread('mine', true, [['cid', '2026-11-11T10:00:00Z', 'Rename this.']]), reviewThread('waiting', true, [['bob', '2026-11-11T10:00:00Z', 'Why?']])],
+    },
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /All your threads/ })).toBeUndefined()
+  calls.length = 0
+
+  await ui.press({ key: 'resolve-all' })
+  expect(writes.map(({ argv }) => argv.at(-1))).toEqual(['id=mine', 'id=waiting'])
+  expect(toasts.at(-1)).toBe('2 threads resolved')
+  expect(notesOf(session).at(-1)).toBe('The user resolved 2 threads of theirs on acme/app#12 from the /babysit-pr pane.')
+  expect(readCalls(calls)).toEqual(['number=12'])
+  expect((await ui.find({ type: 'Text', text: /All your threads/ }))?.text).toBe('✓ All your threads are resolved')
+  expect(await ui.find({ key: 'resolve-all' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Fix all on my PR asks to fix every open thread of mine but those triaged as handled', async ($, on) => {
+  const { prompts } = await openOnTriagedPr($, on)
+  await $.tool.call({ tool: TRIAGE_TOOL, pr: PR_12, threads: [MINE_TRIAGE] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    prompts.length = 0
+
+    await ui.press({ key: 'fix-all' })
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain('Fix what 1 thread raise on my PR acme/app#12')
+    expect(prompts[0]).toContain('- waiting: https://github.com/acme/app/pull/12#discussion_waiting_0')
+    expect(prompts[0]).not.toContain('rename-export-rows')
+    await ui.unmount()
+  }
+})
+
+test('Fix all never shows on a peer\'s PR', async ($, on) => {
+  await openOnTriagedPr($, on, { 12: githubAnswer(12, { author: { login: 'dee' }, reviewThreads: TRIAGED_PR.data.repository.pullRequest.reviewThreads }) })
+  const peer = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await peer.find({ key: 'fix-all' })).toBeUndefined()
+  await peer.unmount()
+})
+
+test('a PR where I never had a thread says so, apart from one where mine were all resolved', async ($, on) => {
+  await openOnTriagedPr($, on, { 12: githubAnswer(12, { author: { login: 'dee' }, reviewThreads: { totalCount: 0, nodes: [] } }) })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /threads of yours/ }))?.text).toBe('No threads of yours')
+  await ui.unmount()
+})
+
+test('the switcher names the PR it unfollows, the branch copies on click, and Follow adds what the field holds', async ($, on) => {
+  const copies: string[] = []
+  on('ui.copy', (_: unknown, e: { text: string }) => {
+    copies.push(e.text)
+
+    return { value: { isCopied: true } }
+  })
+  const { toasts } = await openOnTriagedPr($, on)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ key: 'remove' }))?.text).toBe('Unfollow #12')
+
+  await ui.press({ key: 'copy-branch' })
+  expect(copies).toEqual(['feat/export'])
+  expect(toasts.at(-1)).toBe('Copied feat/export')
+
+  await ui.input({ key: 'add', text: '#30', kind: 'change' })
+  await ui.press({ key: 'follow' })
+  expect((await ui.find({ type: 'Text', text: /^acme\/app#/ }))?.text).toBe('acme/app#30 ↗')
+  expect((await ui.find({ key: 'remove' }))?.text).toBe('Unfollow #30')
+  await ui.unmount()
+})
+
 test('Fix shows on my PR only and asks to fix the thread on its branch without committing, with no note', async ($, on) => {
   const session = mock.session(on)
   const clock = mock.clock(on)
@@ -905,7 +986,7 @@ test('Fix shows on my PR only and asks to fix the thread on its branch without c
     await ui.press({ key: 'fix:mine' })
     expect(prompts).toHaveLength(1)
     expect(prompts[0]).toContain('Fix what this review thread raises on my PR acme/app#12')
-    expect(prompts[0]).toContain("Work on the PR's branch, `feat/export`.")
+    expect(prompts[0]).toContain("Work on the PR's branch, `feat/export`, in a worktree of acme/app.")
     expect(prompts[0]).toContain("Don't commit")
     expect(notesOf(session)).toEqual([])
 

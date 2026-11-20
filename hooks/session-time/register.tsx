@@ -132,7 +132,7 @@ export async function drawSessionTime($: EngineInterface, e: RenderInput<'AboveP
           ))}
         </Text>
       </Box>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap="sm" paddingLeft={2}>
         {SLICES.filter(slice => time.ms[slice] > 0).map(slice => (
           <Text>
             <Text color={LOOK[slice].color}>■</Text> {LOOK[slice].label} {formatDuration(time.ms[slice])}{' '}

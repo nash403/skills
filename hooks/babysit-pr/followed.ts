@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, SessionMessage } from 'claude-code'
 
 import type { FollowedPr, PrRef, PrSnapshot } from '../../types'
+import { busyKey, runOnce } from './busy'
 import { fetchSnapshot, findCurrentBranchPr, findCurrentRepo } from './platform'
 import { findBashPrs, findSessionPrs, parsePrInput, parsePrUrl, prKey, uniquePrs } from './refs'
 import { summarize } from './summarized'
@@ -94,8 +95,6 @@ export async function hasOptedIn($: EngineInterface) {
   return read($, isOptedIn)
 }
 
-const fetching = new Set<string>()
-
 // A failed read is shown on the PR, so it resolves to its reason.
 async function fetchOrReason($: EngineInterface, ref: PrRef, previous: PrSnapshot | null): Promise<{ snapshot: PrSnapshot } | { reason: string }> {
   try {
@@ -105,32 +104,32 @@ async function fetchOrReason($: EngineInterface, ref: PrRef, previous: PrSnapsho
   }
 }
 
+async function readOne($: EngineInterface, ref: PrRef, previous: PrSnapshot | null, isOnScreen: boolean) {
+  const key = prKey(ref)
+  const fetched = await fetchOrReason($, ref, previous)
+
+  if ('reason' in fetched) {
+    await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, error: fetched.reason } : pr)))
+    return
+  }
+
+  const { snapshot } = fetched
+  await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, snapshot, error: null } : pr)))
+  await recordRead($, ref, previous, snapshot, { isOnScreen })
+  void summarize($, ref, snapshot).catch(error => $.ui.log(`babysit-pr: summary of ${key} failed: ${String(error)}`, { to: 'debug' }))
+}
+
+// A read already running for a PR is not started again.
 async function refetch($: EngineInterface, refs: readonly PrRef[]) {
-  const idle = refs.filter(ref => !fetching.has(prKey(ref)))
-  idle.forEach(ref => fetching.add(prKey(ref)))
   const list = await read($, followedPrs)
   const onScreen = await readPrOnScreen($)
 
   await Promise.all(
-    idle.map(async ref => {
+    refs.map(async ref => {
       const key = prKey(ref)
       const previous = list.find(pr => prKey(pr.ref) === key)?.snapshot ?? null
 
-      try {
-        const fetched = await fetchOrReason($, ref, previous)
-
-        if ('reason' in fetched) {
-          await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, error: fetched.reason } : pr)))
-          return
-        }
-
-        const { snapshot } = fetched
-        await update($, followedPrs, list => list.map(pr => (prKey(pr.ref) === key ? { ...pr, snapshot, error: null } : pr)))
-        await recordRead($, ref, previous, snapshot, { isOnScreen: onScreen === key })
-        void summarize($, ref, snapshot).catch(error => $.ui.log(`babysit-pr: summary of ${key} failed: ${String(error)}`, { to: 'debug' }))
-      } finally {
-        fetching.delete(key)
-      }
+      await runOnce($, busyKey('fetch', ref), () => readOne($, ref, previous, onScreen === key))
     }),
   )
 }

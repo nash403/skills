@@ -171,6 +171,8 @@ declare module 'claude-code' {
       babysitWatches: Shaped<Record<string, PrWatch>>
       // By PR key.
       babysitSummaries: Shaped<Record<string, PrSummary>>
+      // What runs now, by busy.ts's key: a read, an approval, a resolve.
+      babysitBusy: string[]
       sessionTime: Shaped<SessionTime | null>
       isSessionTimeOpen: boolean
     }

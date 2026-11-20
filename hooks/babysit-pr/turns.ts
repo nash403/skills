@@ -92,6 +92,13 @@ export function concerningThreads(pr: PrSnapshot): ConcerningThread[] {
   return [...concerning.filter(item => isViewerTurn(item.turn)), ...concerning.filter(item => !isViewerTurn(item.turn))]
 }
 
+// Whether the viewer had threads on the PR and all of them are resolved now, as opposed to never having had one.
+export function hasResolvedAllViewerThreads(pr: PrSnapshot) {
+  const viewerThreads = pr.threads.filter(thread => thread.comments.length > 0 && concernsViewer(pr, thread))
+
+  return viewerThreads.length > 0 && viewerThreads.every(thread => thread.isResolved)
+}
+
 export function threadsLabel(count: number) {
   return count === 1 ? '1 thread' : `${count} threads`
 }

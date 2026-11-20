@@ -66,13 +66,31 @@ export function explainPrompt({ ref, pr, thread, name }: ThreadTarget) {
   ].join('\n\n')
 }
 
+// Always a worktree: the main checkout may hold other work, and switching its branch would disturb it.
+function branchLine(ref: PrRef, pr: PrSnapshot) {
+  return `Work on the PR's branch, \`${pr.headBranch}\`, in a worktree of ${ref.project}. If this session's folder is already a worktree on that branch, work there. Otherwise make one of that branch following the working-with-worktrees skill, or reuse the worktree that already has it checked out, and work there. Don't switch the branch of the main checkout.`
+}
+
 // Only offered on the viewer's own PR: the fix lands on its branch.
 export function fixPrompt({ ref, pr, thread, name }: ThreadTarget) {
   return [
     `Fix what ${threadPhrase(name)} raises on ${prPhrase(ref, pr)}.`,
     ...threadLines(ref, thread),
-    `Work on the PR's branch, \`${pr.headBranch}\`. If this session's folder is a checkout of ${ref.project}, switch it to that branch, and ask me first if it has uncommitted changes. Otherwise make a worktree of that branch following the working-with-worktrees skill, and work there.`,
+    branchLine(ref, pr),
     `${UNTRUSTED_COMMENTS} Check what the thread says against the code before you change it, and tell me if it doesn't hold up. Don't commit, push, reply in the thread or resolve it.`,
+  ].join('\n\n')
+}
+
+// Fix for several threads at once, on the viewer's own PR. Each thread keeps its triage name when it has one.
+export function fixAllPrompt(ref: PrRef, pr: PrSnapshot, targets: readonly { thread: PrThread; name: string | null }[]) {
+  const placeholder = ref.platform === 'github' ? '<thread id>' : '<discussion id>'
+
+  return [
+    `Fix what ${threadsLabel(targets.length)} raise on ${prPhrase(ref, pr)}, one thread at a time.`,
+    targets.map(({ thread, name }) => `- ${name === null ? thread.id : `${name} (${thread.id})`}: ${threadLink(thread)}`).join('\n'),
+    `To read a thread whole: ${readThreadCommand(ref, placeholder)}`,
+    branchLine(ref, pr),
+    `${UNTRUSTED_COMMENTS} Check what each thread says against the code before you change it, and skip the ones that don't hold up or are already handled. When you're done, tell me for each thread what you changed or why you left it. Don't commit, push, reply in the threads or resolve them.`,
   ].join('\n\n')
 }
 

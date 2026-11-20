@@ -1,5 +1,6 @@
 import type { EngineInterface, Register, TurnCompleteInput } from 'claude-code'
 
+import { clearBusy } from './busy'
 import { saveReplyDraft } from './drafted'
 import { REPLY_DRAFT_TOOL_SPEC } from './drafts'
 import { clearShownPrChanges, followCommandPrs, followSessionPrs, hasOptedIn, markPrOnScreenShown, optIn, refreshOpenPrs } from './followed'
@@ -71,6 +72,8 @@ async function registerPaneTools($: EngineInterface) {
 
 export async function startBabysitPr($: EngineInterface) {
   await $.command.register({ name: 'babysit-pr', description: 'Follow the PRs and MRs of this session in a pane' })
+  // Work a previous load of the module left marked as running ended with it.
+  await clearBusy($)
 
   if (await hasOptedIn($)) {
     await registerPaneTools($)

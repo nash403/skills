@@ -350,7 +350,7 @@ export async function drawGitBand($: EngineInterface, e: RenderInput<'AbovePromp
 
   return (
     <Box flexDirection="column" width="100%">
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2} width="100%">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap="sm" width="100%">
         <Button key="folder" plain dimColor onPress={press => void copyCwd($, press.surface)}>
           {git.isLinkedWorktree ? '🌿' : '📁'} {git.folder}
         </Button>

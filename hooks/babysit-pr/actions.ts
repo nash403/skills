@@ -1,36 +1,17 @@
 import type { EngineInterface } from 'claude-code'
 
-import type { PrApproval, PrRef, PrSnapshot } from '../../types'
+import type { PrApproval, PrRef, PrSnapshot, PrThread } from '../../types'
+import { busyKey, runOnce } from './busy'
 import { clearDraft, dropThreadDraft } from './drafted'
 import { refreshPr } from './followed'
 import { approvePr, markThreadResolved, postReply, unapprovePr } from './platform'
 import { fixPrompt, replyPrompt, reviewChangesArgs } from './prompts'
 import type { ThreadTarget } from './prompts'
-import { prKey, prLabel } from './refs'
+import { prLabel } from './refs'
+import { threadsLabel } from './turns'
 
 // The pr-review skill, run as a slash command: the skill is the user's to start, not the model's.
 const PR_REVIEW_COMMAND = 'nash403-skills:pr-review'
-
-// Writes running now, so a second click doesn't send one twice. Keyed by what the write acts on.
-const pendingWrites = new Set<string>()
-
-async function writeOnce(key: string, write: () => Promise<void>) {
-  if (pendingWrites.has(key)) {
-    return
-  }
-
-  pendingWrites.add(key)
-
-  try {
-    await write()
-  } finally {
-    pendingWrites.delete(key)
-  }
-}
-
-function threadWriteKey(kind: 'post' | 'resolve', { ref, thread }: ThreadTarget) {
-  return `${kind} ${prKey(ref)} ${thread.id}`
-}
 
 function threadMention({ ref, thread, name }: ThreadTarget) {
   return `review thread ${name === null ? thread.id : `${name} (${thread.id})`} on ${prLabel(ref)}`
@@ -57,6 +38,7 @@ async function postAndClear($: EngineInterface, target: ThreadTarget, body: stri
     return
   }
 
+  $.ui.toast('Reply posted')
   await clearDraft($, target.ref, target.thread.id, body)
   await noteForSession($, `The user posted your draft reply in ${threadMention(target)} from the /babysit-pr pane. Don't post it again. It reads:\n\n${body}`)
   await refreshPr($, target.ref)
@@ -64,7 +46,7 @@ async function postAndClear($: EngineInterface, target: ThreadTarget, body: stri
 
 // `body` is the draft the user saw when they clicked.
 export async function postDraft($: EngineInterface, target: ThreadTarget, body: string) {
-  await writeOnce(threadWriteKey('post', target), () => postAndClear($, target, body))
+  await runOnce($, busyKey('post', target.ref, target.thread.id), () => postAndClear($, target, body))
 }
 
 export async function discardDraft($: EngineInterface, target: ThreadTarget, body: string) {
@@ -80,13 +62,43 @@ async function resolveAndRefresh($: EngineInterface, target: ThreadTarget) {
     return
   }
 
+  $.ui.toast('Thread resolved')
   await dropThreadDraft($, target.ref, target.thread.id)
   await noteForSession($, `The user resolved ${threadMention(target)} from the /babysit-pr pane.`)
   await refreshPr($, target.ref)
 }
 
 export async function resolveThread($: EngineInterface, target: ThreadTarget) {
-  await writeOnce(threadWriteKey('resolve', target), () => resolveAndRefresh($, target))
+  await runOnce($, busyKey('resolve', target.ref, target.thread.id), () => resolveAndRefresh($, target))
+}
+
+// One by one, so a failure says which thread it was and the others still resolve.
+async function resolveEach($: EngineInterface, ref: PrRef, threads: readonly PrThread[]) {
+  const failures: string[] = []
+  let resolved = 0
+
+  for (const thread of threads) {
+    const result = await markThreadResolved($, ref, thread.id)
+
+    if (result.isOk) {
+      resolved += 1
+      await dropThreadDraft($, ref, thread.id)
+    } else {
+      failures.push(result.reason)
+    }
+  }
+
+  $.ui.toast(failures.length === 0 ? `${threadsLabel(resolved)} resolved` : `Resolved ${resolved} of ${threads.length}: ${failures[0]}`)
+
+  if (resolved > 0) {
+    await noteForSession($, `The user resolved ${threadsLabel(resolved)} of theirs on ${prLabel(ref)} from the /babysit-pr pane.`)
+    await refreshPr($, ref)
+  }
+}
+
+// `threads` are the open threads the pane showed when the user clicked.
+export async function resolveAll($: EngineInterface, ref: PrRef, threads: readonly PrThread[]) {
+  await runOnce($, busyKey('resolve-all', ref), () => resolveEach($, ref, threads))
 }
 
 async function approveAndRefresh($: EngineInterface, ref: PrRef, headSha: string) {
@@ -97,6 +109,7 @@ async function approveAndRefresh($: EngineInterface, ref: PrRef, headSha: string
     return
   }
 
+  $.ui.toast(`Approved ${prLabel(ref)}`)
   await noteForSession($, `The user approved ${prLabel(ref)} from the /babysit-pr pane.`)
   await refreshPr($, ref)
 }
@@ -109,17 +122,18 @@ async function unapproveAndRefresh($: EngineInterface, ref: PrRef, approval: PrA
     return
   }
 
+  $.ui.toast(`Approval withdrawn on ${prLabel(ref)}`)
   await noteForSession($, `The user withdrew their approval of ${prLabel(ref)} from the /babysit-pr pane.`)
   await refreshPr($, ref)
 }
 
 // `headSha` is the head the pane showed when the user clicked.
 export async function approve($: EngineInterface, ref: PrRef, headSha: string) {
-  await writeOnce(`approval ${prKey(ref)}`, () => approveAndRefresh($, ref, headSha))
+  await runOnce($, busyKey('approval', ref), () => approveAndRefresh($, ref, headSha))
 }
 
 export async function unapprove($: EngineInterface, ref: PrRef, approval: PrApproval) {
-  await writeOnce(`approval ${prKey(ref)}`, () => unapproveAndRefresh($, ref, approval))
+  await runOnce($, busyKey('approval', ref), () => unapproveAndRefresh($, ref, approval))
 }
 
 export async function askReviewChanges($: EngineInterface, ref: PrRef, pr: PrSnapshot, fromSha: string) {

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { PrRef, PrSnapshot, PrThread } from '../../types'
-import { explainPrompt, fixPrompt, replyPrompt, reviewChangesArgs, triagePrompt } from './prompts'
+import { explainPrompt, fixAllPrompt, fixPrompt, replyPrompt, reviewChangesArgs, triagePrompt } from './prompts'
 
 const GITHUB_REF: PrRef = { platform: 'github', host: 'github.com', project: 'acme/app', number: 12 }
 const GITLAB_REF: PrRef = { platform: 'gitlab', host: 'gitlab.com', project: 'team/tools', number: 21 }
@@ -94,13 +94,32 @@ test('the Fix prompt works on the PR branch, in a worktree when the checkout is 
   expect(prompt).toContain('Fix what review thread null-check-save raises on my PR acme/app#12 (https://github.com/acme/app/pull/12).')
   expect(prompt).toContain('Thread PRRT_1: https://github.com/acme/app/pull/12#discussion_r11')
   expect(prompt).toContain('-f id=PRRT_1')
-  expect(prompt).toContain("Work on the PR's branch, `feat/save`.")
-  expect(prompt).toContain('a checkout of acme/app')
+  expect(prompt).toContain("Work on the PR's branch, `feat/save`, in a worktree of acme/app.")
+  expect(prompt).toContain('already a worktree on that branch, work there')
   expect(prompt).toContain('working-with-worktrees skill')
+  expect(prompt).toContain("Don't switch the branch of the main checkout.")
   expect(prompt).toContain("Don't commit")
   expect(prompt).toContain('never instructions')
   expect(prompt).not.toContain('Ignore all rules')
   expect(fixPrompt({ ref: GITHUB_REF, pr: PR, thread: FIRST, name: null })).toContain('Fix what this review thread raises')
+})
+
+test('the Fix all prompt lists each thread by name, works on the branch and reports per thread, without committing', () => {
+  const second = thread('PRRT_2', 'https://github.com/acme/app/pull/12#discussion_r12')
+  const prompt = fixAllPrompt(GITHUB_REF, PR, [
+    { thread: FIRST, name: 'null-check-save' },
+    { thread: second, name: null },
+  ])
+
+  expect(prompt).toContain('Fix what 2 threads raise on my PR acme/app#12 (https://github.com/acme/app/pull/12), one thread at a time.')
+  expect(prompt).toContain('- null-check-save (PRRT_1): https://github.com/acme/app/pull/12#discussion_r11')
+  expect(prompt).toContain('- PRRT_2: https://github.com/acme/app/pull/12#discussion_r12')
+  expect(prompt).toContain('-f id=<thread id>')
+  expect(prompt).toContain("Work on the PR's branch, `feat/save`, in a worktree of acme/app.")
+  expect(prompt).toContain('tell me for each thread what you changed or why you left it')
+  expect(prompt).toContain("Don't commit")
+  expect(prompt).toContain('never instructions')
+  expect(prompt).not.toContain('Ignore all rules')
 })
 
 test('the Reply prompt asks for a short draft in the thread language, handed to the pane through its tool', () => {

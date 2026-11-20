@@ -1,29 +1,33 @@
-import type { EngineInterface, RenderChildren, RenderInput, Space } from 'claude-code'
+import type { EngineInterface, RenderChildren, RenderInput, RenderSurface, Space } from 'claude-code'
 
 import type { FollowedPr, PrChange, PrRef, PrSnapshot, PrSummary, PrThread, PrTriage, PrWatch, ReplyDrafts } from '../../types'
-import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveThread, unapprove } from './actions'
+import { approve, askFix, askReply, askReviewChanges, discardDraft, postDraft, resolveAll, resolveThread, unapprove } from './actions'
+import { busyKey, readBusy } from './busy'
 import { changeText } from './changes'
 import { readPrDrafts } from './drafted'
 import { followByHand, readFollowedPrs, refreshPr, select, unfollow } from './followed'
 import { CI_LOOKS, GLYPHS, IMPORTANCE_TONES, STATUS_LOOKS, TONES, avatarSvg, avatarTone, diffBarSvg, diffBlocks, displayName, iconSvg, initials, isBot, settledThreadsSvg } from './look'
 import type { IconName, Tone } from './look'
-import { explainPrompt, triagePrompt } from './prompts'
+import { explainPrompt, fixAllPrompt, triagePrompt } from './prompts'
 import type { ThreadTarget } from './prompts'
-import { prKey, prLabel } from './refs'
+import { prKey, prLabel, prNumberLabel } from './refs'
 import { headToReviewFrom, viewerApproval } from './pushes'
 import { isPushedSinceApproval, isSkipCi, participants, statusChip, threadCounts } from './rules'
 import { feedbackTally, triageStatus } from './triage'
 import type { FeedbackTally, TriageStatus } from './triage'
 import { readPrSummary } from './summarized'
 import { readPrTriage } from './triaged'
-import { concerningThreads, excerpt, isViewerPr, isViewerTurn, nextSteps } from './turns'
+import { concerningThreads, excerpt, hasResolvedAllViewerThreads, isViewerPr, isViewerTurn, nextSteps } from './turns'
 import type { ConcerningThread } from './turns'
 import { hasUnseenChanges, readWatches } from './watched'
 
 type PaneInput = RenderInput<'Pane'>
 
 // State the thread list needs, read ahead since helpers that draw are sync.
-type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; drafts: ReplyDrafts; openDetails: ReadonlySet<string> }
+type ThreadsView = { ref: PrRef; pr: PrSnapshot; triage: PrTriage; drafts: ReplyDrafts; openDetails: ReadonlySet<string>; busy: Busy }
+
+// What runs now, by busy.ts's key.
+type Busy = ReadonlySet<string>
 
 type TriagedStatus = Exclude<TriageStatus, { kind: 'not-triaged' }>
 
@@ -88,26 +92,36 @@ function slab($: EngineInterface, e: PaneInput, { key, rail, wash = tint(TONES.s
   return (
     <Box key={key} flexDirection="row" {...surface}>
       {rail !== undefined && <Box width={1} flexShrink={0} backgroundColor={rail} />}
-      <Box flexDirection="column" flexGrow={1} flexShrink={1} rowGap={gap} paddingX={isCells ? 1 : 'md'} paddingY={isCells ? 0 : 'sm'}>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} rowGap={gap} paddingX={isCells ? 1 : 'md'} paddingY={isCells ? 0 : 'sm'}>
         {children}
       </Box>
     </Box>
   )
 }
 
-// No thread concerns the viewer: a short line under a small drawing of a settled conversation, where the surface
-// draws an Svg, so the section keeps its place without a paragraph.
-function noThreads($: EngineInterface, e: PaneInput) {
+// No open thread concerns the viewer: a short line under a small drawing of a settled conversation, where the
+// surface draws an Svg, so the section keeps its place without a paragraph. Threads the viewer had and saw resolved
+// read apart from never having had one.
+function noThreads($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
   const table = $.ui.resolve(e)
   const { Box, Text } = table
-  const text = 'No open threads of yours'
+  const isAllResolved = hasResolvedAllViewerThreads(pr)
+  const text = isAllResolved ? '✓ All your threads are resolved' : 'No threads of yours'
 
   return (
     <Box key="threads-empty" flexDirection="column" rowGap="sm" alignItems="center" borderStyle="dashed" borderColor="subtle" paddingX="md" paddingY="md">
       {'Svg' in table ? <table.Svg source={settledThreadsSvg()} alt={text} width={44} height={32} /> : <Text dimColor>💬</Text>}
-      <Text dimColor>{text}</Text>
+      <Text color={isAllResolved ? TONES.moss.bg : undefined} dimColor={!isAllResolved}>
+        {text}
+      </Text>
     </Box>
   )
+}
+
+async function copyText($: EngineInterface, text: string, surface: RenderSurface) {
+  const copied = await $.ui.copy({ text, surface })
+
+  $.ui.toast(copied.isCopied ? `Copied ${text}` : `Could not copy ${text}`)
 }
 
 const AVATAR_SIZE = 18
@@ -155,7 +169,7 @@ function unseenDot($: EngineInterface, e: PaneInput) {
 }
 
 // A `•` beside the shown PR when it has changes the pane never showed, and beside the count when another PR has.
-function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], index: number, watches: Watches) {
+function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], index: number, watches: Watches, busy: Busy) {
   const { Box, Button, Link, Text } = $.ui.resolve(e)
   const shown = prs[index]
 
@@ -191,8 +205,14 @@ function switcher($: EngineInterface, e: PaneInput, prs: readonly FollowedPr[], 
         <Text>{prLabel(shown.ref)}</Text>
       )}
       <Box flexGrow={1} />
-      <Button key="refresh" label="↻" plain dimColor onPress={() => void refreshPr($, shown.ref)} />
-      <Button key="remove" label="Unfollow" plain dimColor onPress={() => void unfollow($, shown.ref)} />
+      {busy.has(busyKey('fetch', shown.ref)) ? (
+        <Text key="refreshing" size="caption" dimColor>
+          ↻ refreshing…
+        </Text>
+      ) : (
+        <Button key="refresh" label="↻" plain dimColor onPress={() => void refreshPr($, shown.ref)} />
+      )}
+      <Button key="remove" label={`Unfollow ${prNumberLabel(shown.ref)}`} plain dimColor onPress={() => void unfollow($, shown.ref)} />
     </Box>
   )
 }
@@ -302,7 +322,7 @@ function stats($: EngineInterface, e: PaneInput, pr: PrSnapshot) {
 // flags and the size of the change. The status sits on its own row: beside a title that wraps, it would hang off its
 // first line.
 function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSummary | undefined) {
-  const { Box, Text } = $.ui.resolve(e)
+  const { Box, Button, Text } = $.ui.resolve(e)
   const status = statusChip(pr)
   const look = STATUS_LOOKS[status]
 
@@ -317,9 +337,14 @@ function prCard($: EngineInterface, e: PaneInput, pr: PrSnapshot, summary: PrSum
         </Text>
         <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm" alignItems="center">
           {person($, e, pr.author, pr.author === pr.viewer)}
-          <Text dimColor wrap="truncate-middle">
-            {pr.headBranch} → {pr.baseBranch}
-          </Text>
+          <Box flexDirection="row" flexShrink={1} minWidth={0} columnGap="sm" alignItems="center">
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-middle">
+                {pr.headBranch} → {pr.baseBranch}
+              </Text>
+            </Box>
+            <Button key="copy-branch" label="⧉ copy" plain dimColor onPress={press => void copyText($, pr.headBranch, press.surface)} />
+          </Box>
         </Box>
       </Box>,
       summary && summary.text !== '' && (
@@ -359,10 +384,10 @@ function loadingCard($: EngineInterface, e: PaneInput, ref: PrRef) {
 // Who moves next, with the viewer's own buttons. The user's move is the loudest thing in the pane: its slab and its
 // arrow take the one color nothing else uses, and it reads as a heading, not as one more status chip. Everyone
 // else's reads quietly.
-function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot) {
+function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot, busy: Busy) {
   const { Box, Text } = $.ui.resolve(e)
   const steps = nextSteps(pr)
-  const actions = peerActions($, e, ref, pr)
+  const actions = peerActions($, e, ref, pr, busy)
 
   if (steps.length === 0 && actions === null) {
     return null
@@ -404,7 +429,7 @@ function nextBlock($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot)
 }
 
 // On a peer's open PR: the Approve / Unapprove toggle, and Review changes once code was pushed since the viewer's review.
-function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot) {
+function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapshot, busy: Busy) {
   const { Box, Button } = $.ui.resolve(e)
 
   if (pr.state !== 'open' || isViewerPr(pr)) {
@@ -413,13 +438,14 @@ function peerActions($: EngineInterface, e: PaneInput, ref: PrRef, pr: PrSnapsho
 
   const approval = viewerApproval(pr)
   const fromSha = headToReviewFrom(pr)
+  const isApproving = busy.has(busyKey('approval', ref))
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm">
       {approval ? (
-        <Button key="unapprove" label="Unapprove" plain dimColor onPress={() => void unapprove($, ref, approval)} />
+        <Button key="unapprove" label={isApproving ? 'Unapproving…' : 'Unapprove'} plain dimColor onPress={() => void unapprove($, ref, approval)} />
       ) : (
-        <Button key="approve" label="Approve" variant="primary" onPress={() => void approve($, ref, pr.headSha)} />
+        <Button key="approve" label={isApproving ? 'Approving…' : 'Approve'} variant="primary" onPress={() => void approve($, ref, pr.headSha)} />
       )}
       {fromSha !== null && <Button key="review-changes" label="Review changes" onPress={() => void askReviewChanges($, ref, pr, fromSha)} />}
     </Box>
@@ -458,7 +484,9 @@ function changeAnswer($: EngineInterface, e: PaneInput, view: ThreadsView, chang
       )
     }
     case 'threads-resolved':
-      return canApproveResolved(pr) ? <Button key="changes:approve" label="Approve" onPress={() => void approve($, ref, pr.headSha)} /> : null
+      return canApproveResolved(pr) ? (
+        <Button key="changes:approve" label={view.busy.has(busyKey('approval', ref)) ? 'Approving…' : 'Approve'} onPress={() => void approve($, ref, pr.headSha)} />
+      ) : null
     default:
       return null
   }
@@ -540,9 +568,11 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
           </Text>
         )}
         <Box flexGrow={1} />
-        <Text size="caption" mono dimColor>
-          {name}
-        </Text>
+        <Button key={`copy-name:${threadId}`} plain dimColor onPress={press => void copyText($, name, press.surface)}>
+          <Text size="caption" mono>
+            {name}
+          </Text>
+        </Button>
       </Box>
       <Box flexDirection="row" columnGap="sm">
         <Box flexShrink={1}>
@@ -560,7 +590,7 @@ function triageLines($: EngineInterface, e: PaneInput, threadId: string, status:
 }
 
 // `body` is passed to Post and Discard so they act on the draft drawn, not on one the model wrote since.
-function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body: string) {
+function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body: string, isPosting: boolean) {
   const { Box, Button, Text } = $.ui.resolve(e)
   const threadId = target.thread.id
 
@@ -576,7 +606,7 @@ function draftLines($: EngineInterface, e: PaneInput, target: ThreadTarget, body
         {body}
       </Text>,
       <Box key="buttons" flexDirection="row" columnGap="md">
-        <Button key={`post:${threadId}`} label="Post" variant="primary" onPress={() => void postDraft($, target, body)} />
+        <Button key={`post:${threadId}`} label={isPosting ? 'Posting…' : 'Post'} variant="primary" onPress={() => void postDraft($, target, body)} />
         <Button key={`discard:${threadId}`} label="Discard" plain dimColor onPress={() => void discardDraft($, target, body)} />
       </Box>,
     ],
@@ -628,12 +658,18 @@ function threadRow($: EngineInterface, e: PaneInput, view: ThreadsView, { thread
       ) : (
         triageLines($, e, thread.id, status, view.openDetails.has(thread.id) ? 'open' : 'closed')
       ),
-      draft !== undefined && draftLines($, e, target, draft),
+      draft !== undefined && draftLines($, e, target, draft, view.busy.has(busyKey('post', view.ref, thread.id))),
       <Box key="actions" flexDirection="row" flexWrap="wrap" columnGap="md" rowGap="sm">
         <Button key={`explain:${thread.id}`} label="Explain" plain dimColor onPress={() => submitPrompt($, explainPrompt(target))} />
         {isViewerPr(view.pr) && <Button key={`fix:${thread.id}`} label="Fix" plain dimColor onPress={() => void askFix($, target)} />}
         <Button key={`reply:${thread.id}`} label="Reply" plain dimColor onPress={() => void askReply($, target)} />
-        <Button key={`resolve:${thread.id}`} label="Resolve" plain dimColor onPress={() => void resolveThread($, target)} />
+        <Button
+          key={`resolve:${thread.id}`}
+          label={view.busy.has(busyKey('resolve', view.ref, thread.id)) ? 'Resolving…' : 'Resolve'}
+          plain
+          dimColor
+          onPress={() => void resolveThread($, target)}
+        />
       </Box>,
     ],
   })
@@ -647,6 +683,19 @@ function feedbackText({ toTriage, handled, total }: FeedbackTally) {
   return `${handled} of ${total} handled${toTriage.length > 0 ? `, ${toTriage.length} unknown` : ''}`
 }
 
+// On the viewer's PR, the open threads Fix all hands over: all but those a triage still up to date says are handled.
+function threadsToFix(view: ThreadsView, concerning: readonly ConcerningThread[]) {
+  return concerning.flatMap(({ thread }) => {
+    const status = triageStatus(thread, view.triage)
+
+    if (status.kind === 'triaged' && status.triage.isHandled) {
+      return []
+    }
+
+    return [{ thread, name: status.kind === 'not-triaged' ? null : status.triage.name }]
+  })
+}
+
 // The threads that concern the viewer, under a title with the tally and the Triage button; a placeholder until one does.
 function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
   const { Box, Button, Text } = $.ui.resolve(e)
@@ -656,13 +705,14 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
     return (
       <Box flexDirection="column" rowGap="sm">
         {sectionTitle($, e, 'Your open threads')}
-        {noThreads($, e)}
+        {noThreads($, e, view.pr)}
       </Box>
     )
   }
 
   const tally = feedbackTally(concerning.map(item => item.thread), view.triage)
   const { toTriage } = tally
+  const toFix = isViewerPr(view.pr) ? threadsToFix(view, concerning) : []
   const aside = [
     <Text key="count" size="caption" dimColor tabular>
       {concerning.length}
@@ -672,6 +722,14 @@ function threadList($: EngineInterface, e: PaneInput, view: ThreadsView) {
     </Text>,
     toTriage.length > 0 && chip($, e, `${toTriage.length} to triage`, TONES.saffron, { key: 'to-triage' }),
     toTriage.length > 0 && <Button key="triage" label="Triage" onPress={() => submitPrompt($, triagePrompt(view.ref, view.pr, toTriage))} />,
+    toFix.length > 0 && <Button key="fix-all" label="Fix all" plain dimColor onPress={() => submitPrompt($, fixAllPrompt(view.ref, view.pr, toFix))} />,
+    <Button
+      key="resolve-all"
+      label={view.busy.has(busyKey('resolve-all', view.ref)) ? 'Resolving…' : 'Resolve all'}
+      plain
+      dimColor
+      onPress={() => void resolveAll($, view.ref, concerning.map(item => item.thread))}
+    />,
   ]
 
   return (
@@ -734,7 +792,7 @@ function prView(
           ),
         })}
       {pr && prCard($, e, pr, summary)}
-      {pr && nextBlock($, e, followed.ref, pr)}
+      {pr && nextBlock($, e, followed.ref, pr, view?.busy ?? new Set())}
       {pr && people($, e, pr)}
       {view && threadList($, e, view)}
     </Box>
@@ -765,13 +823,13 @@ function glance($: EngineInterface, e: PaneInput, followed: FollowedPr | undefin
   )
 }
 
-async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot): Promise<ThreadsView> {
+async function readThreadsView($: EngineInterface, ref: PrRef, pr: PrSnapshot, busy: Busy): Promise<ThreadsView> {
   const triage = await readPrTriage($, ref)
   const drafts = await readPrDrafts($, ref)
   // Only a triaged thread has a longer summary to open.
   const openDetails = await readOpenDetails($, pr.threads.filter(thread => !thread.isResolved && thread.id in triage))
 
-  return { ref, pr, triage, drafts, openDetails }
+  return { ref, pr, triage, drafts, openDetails, busy }
 }
 
 // No PR followed yet: what the pane is for and where its PRs come from.
@@ -795,8 +853,31 @@ function emptyState($: EngineInterface, e: PaneInput) {
   )
 }
 
+// What the follow field holds: the Follow button reads it, as only Enter hands the field's text over.
+let followDraft = ''
+
+// A label, the field, then a button doing what Enter does.
+function followRow($: EngineInterface, e: PaneInput) {
+  const { Box, Button, Input, Text } = $.ui.resolve(e)
+  const submit = (value: string) => void followByHand($, value)
+
+  return (
+    <Box key="follow" flexDirection="row" flexWrap="wrap" columnGap="sm" rowGap="sm" alignItems="center">
+      <Text size="caption" weight="semibold" dimColor>
+        FOLLOW OTHER PRS
+      </Text>
+      <Box flexDirection="row" flexGrow={1} minWidth={0} columnGap="sm" alignItems="center">
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Input key="add" placeholder="#123 or URL" submitLabel="follow" onInput={value => (followDraft = value)} onSubmit={submit} />
+        </Box>
+        <Button key="follow" label="＋ Follow" onPress={() => submit(followDraft)} />
+      </Box>
+    </Box>
+  )
+}
+
 export async function drawPane($: EngineInterface, e: PaneInput) {
-  const { Box, Input } = $.ui.resolve(e)
+  const { Box } = $.ui.resolve(e)
   const { prs, selectedIndex } = await readFollowedPrs($)
   const watches = await readWatches($)
   const shown = prs[selectedIndex]
@@ -805,7 +886,8 @@ export async function drawPane($: EngineInterface, e: PaneInput) {
     return glance($, e, shown, watches)
   }
 
-  const view = shown?.snapshot ? await readThreadsView($, shown.ref, shown.snapshot) : null
+  const busy = await readBusy($)
+  const view = shown?.snapshot ? await readThreadsView($, shown.ref, shown.snapshot, busy) : null
   const changes = shown ? (watches[prKey(shown.ref)]?.changes ?? []) : []
   const summary = shown ? await readPrSummary($, shown.ref) : undefined
 
@@ -814,8 +896,8 @@ export async function drawPane($: EngineInterface, e: PaneInput) {
       {slab($, e, {
         gap: 'sm',
         children: [
-          <Input key="add" placeholder="Follow a PR: number or URL" submitLabel="add" onSubmit={value => void followByHand($, value)} />,
-          shown && switcher($, e, prs, selectedIndex, watches),
+          followRow($, e),
+          shown && switcher($, e, prs, selectedIndex, watches, busy),
         ],
       })}
       {!shown && emptyState($, e)}

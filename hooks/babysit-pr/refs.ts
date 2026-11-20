@@ -17,8 +17,13 @@ export function prKey(ref: PrRef) {
 }
 
 // GitHub numbers its PRs `#12`, GitLab its MRs `!12`.
+// The number alone, as the platform writes it: `#12` on GitHub, `!12` on GitLab.
+export function prNumberLabel(ref: PrRef) {
+  return `${ref.platform === 'github' ? '#' : '!'}${ref.number}`
+}
+
 export function prLabel(ref: PrRef) {
-  return `${ref.project}${ref.platform === 'github' ? '#' : '!'}${ref.number}`
+  return `${ref.project}${prNumberLabel(ref)}`
 }
 
 // GitLab's REST API names a project by its URL-encoded path.
