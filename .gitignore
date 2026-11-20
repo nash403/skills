@@ -2,7 +2,8 @@
 node_modules/
 
 # Editors and agents
-.claude/
+.claude/*
+!.claude/CLAUDE.md
 .vscode/
 .idea/
 *.swp
