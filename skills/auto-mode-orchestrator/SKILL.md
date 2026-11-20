@@ -41,7 +41,7 @@ Load `unslop` before writing tickets, comments in code, PR/MR text or the wiki.
 
 ## Wiki
 
-A folder, `auto-mode-wiki/`, created at first need in the personal context folder of the main checkout, beside the work's tickets; else follow `placing-produced-documents`. Read its `index.md` before each decision and after a compaction.
+One folder per run, `auto-mode-wiki/<run>/`, created at first need in the personal context folder of the main checkout, beside the work's tickets; else follow `placing-produced-documents`. `<run>` is the start date plus a slug of the work, e.g. `2026-11-19-hub-name-supplier-view`, with a suffix if the folder exists. Only this run reads and writes it; other runs' folders stay untouched. Read its `index.md` before each decision and after a compaction.
 
 `index.md` is the entry point and the source of truth, and only you edit it: the State (per node: branch, worktree, PR/MR, status, what waits on me), then a link and a one-line summary per page. Keep it to pointers. Every other page covers one topic (the environment, a decision, a recurring problem, a sub-agent's findings) and links the related ones. Sub-agents avoid editing each other's pages. You list new pages in the index. Cite sources rather than copy them, and split a page that grows.
 
